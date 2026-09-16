@@ -1,0 +1,36 @@
+[project]
+name = "mini-onyx"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = []
+
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.ty.environment]
+python-version = "3.13"
+root = ["./backend"]
+extra-paths = ["backend"]
+
+[tool.ty.src]
+include = ["backend", "tests"]
+
+[dependency-groups]
+dev = [
+    "pre-commit==4.6.2",
+    "pytest==9.0.3",
+    "ruff==0.16.1",
+    "ty==0.0.63",
+]

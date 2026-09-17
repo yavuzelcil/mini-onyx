@@ -15,6 +15,22 @@
       },
       "console": "integratedTerminal",
       "justMyCode": true
+    },
+    {
+      "name": "Backend: FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "mini_onyx.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": true
     }
   ]
 }

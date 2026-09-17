@@ -18,3 +18,17 @@ repos:
         entry: uv run ty check
         language: system
         pass_filenames: false
+
+      - id: web-test
+        name: Web tests
+        entry: bun --cwd web test
+        language: system
+        pass_filenames: false
+        files: ^web/
+
+      - id: web-typecheck
+        name: Web type check
+        entry: bun run --cwd web typecheck
+        language: system
+        pass_filenames: false
+        files: ^web/

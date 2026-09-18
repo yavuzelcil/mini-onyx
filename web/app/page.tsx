@@ -1,9 +1,9 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { sendChatMessage } from "@/lib/chat";
+import { streamChatMessage } from "@/lib/chat";
 
 interface ChatMessage {
   id: string;
@@ -16,6 +16,7 @@ export default function HomePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>
@@ -28,6 +29,12 @@ export default function HomePage() {
       return;
     }
 
+    const userMessageId = crypto.randomUUID();
+    const assistantMessageId = crypto.randomUUID();
+    const abortController = new AbortController();
+
+    abortControllerRef.current = abortController;
+
     setError(null);
     setIsSubmitting(true);
     setMessage("");
@@ -35,24 +42,58 @@ export default function HomePage() {
     setMessages((currentMessages) => [
       ...currentMessages,
       {
-        id: crypto.randomUUID(),
+        id: userMessageId,
         role: "user",
         content: normalizedMessage,
       },
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+      },
     ]);
 
-    try {
-      const response = await sendChatMessage(normalizedMessage);
+    let receivedDone = false;
 
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: response.reply,
-        },
-      ]);
+    try {
+      for await (const packet of streamChatMessage(
+        normalizedMessage,
+        abortController.signal
+      )) {
+        if (packet.type === "content_delta") {
+          setMessages((currentMessages) =>
+            currentMessages.map((chatMessage) =>
+              chatMessage.id === assistantMessageId
+                ? {
+                    ...chatMessage,
+                    content:
+                      chatMessage.content + packet.content,
+                  }
+                : chatMessage
+            )
+          );
+        }
+
+        if (packet.type === "error") {
+          throw new Error(packet.detail);
+        }
+
+        if (packet.type === "done") {
+          receivedDone = true;
+        }
+      }
+
+      if (!receivedDone) {
+        throw new Error("Chat stream ended unexpectedly");
+      }
     } catch (requestError: unknown) {
+      if (
+        requestError instanceof DOMException &&
+        requestError.name === "AbortError"
+      ) {
+        return;
+      }
+
       const detail =
         requestError instanceof Error
           ? requestError.message
@@ -60,8 +101,16 @@ export default function HomePage() {
 
       setError(detail);
     } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+
       setIsSubmitting(false);
     }
+  }
+
+  function handleStop(): void {
+    abortControllerRef.current?.abort();
   }
 
   return (
@@ -126,13 +175,23 @@ export default function HomePage() {
             disabled={isSubmitting}
           />
 
-          <button
-            className="rounded-lg bg-blue-600 px-5 py-3 font-medium hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-            type="submit"
-            disabled={!message.trim() || isSubmitting}
-          >
-            {isSubmitting ? "Sending..." : "Send"}
-          </button>
+          {isSubmitting ? (
+            <button
+              className="rounded-lg bg-red-600 px-5 py-3 font-medium hover:bg-red-500"
+              type="button"
+              onClick={handleStop}
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              className="rounded-lg bg-blue-600 px-5 py-3 font-medium hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              type="submit"
+              disabled={!message.trim()}
+            >
+              Send
+            </button>
+          )}
         </form>
       </section>
     </main>

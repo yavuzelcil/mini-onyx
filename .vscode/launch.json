@@ -2,9 +2,28 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Python: Debug LiteLLM test",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "module": "pytest",
+      "args": [
+          "tests/test_litellm_client.py::test_litellm_client_streams_content_chunks",
+          "-v",
+          "-s"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend"
+      },
+      "console": "internalConsole",
+      "justMyCode": true
+    },
+    {
       "name": "Python: Debug pytest",
       "type": "debugpy",
       "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "module": "pytest",
       "args": [
         "-v"
@@ -13,13 +32,14 @@
       "env": {
         "PYTHONPATH": "${workspaceFolder}/backend"
       },
-      "console": "integratedTerminal",
+      "console": "internalConsole",
       "justMyCode": true
     },
     {
       "name": "Backend: FastAPI",
       "type": "debugpy",
       "request": "launch",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
       "module": "uvicorn",
       "args": [
         "mini_onyx.main:app",
@@ -29,7 +49,8 @@
         "8000"
       ],
       "cwd": "${workspaceFolder}/backend",
-      "console": "integratedTerminal",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "internalConsole",
       "justMyCode": true
     }
   ]

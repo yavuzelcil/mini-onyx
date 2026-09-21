@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:15.2-alpine
+    container_name: mini-onyx-postgres
+    environment:
+      POSTGRES_DB: mini_onyx
+      POSTGRES_USER: mini_onyx
+      POSTGRES_PASSWORD: mini_onyx_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U mini_onyx -d mini_onyx",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

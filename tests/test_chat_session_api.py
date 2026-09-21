@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from mini_onyx.chat.personas import PERSONA_PRESETS
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.models import Base
 from mini_onyx.llm.dependencies import get_llm
@@ -83,6 +84,7 @@ def test_creates_and_reads_chat_session(client: TestClient) -> None:
 
     assert created.status_code == 201
     assert created.json()["title"] == "Python"
+    assert created.json()["persona_name"] is None
 
     chat_session_id = created.json()["id"]
     fetched = client.get(f"/api/chat/sessions/{chat_session_id}")
@@ -95,6 +97,59 @@ def test_missing_chat_session_returns_404(client: TestClient) -> None:
     response = client.get("/api/chat/sessions/999")
 
     assert response.status_code == 404
+
+
+def test_selected_persona_is_returned_and_used_for_reply(client: TestClient) -> None:
+    recorded_prompts: list[str] = []
+
+    class RecordingLLM(FakeLLM):
+        def invoke(
+            self,
+            *,
+            system_prompt: str,
+            user_message: str,
+            history: list[tuple[str, str]] | None = None,
+        ) -> str:
+            recorded_prompts.append(system_prompt)
+            return super().invoke(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                history=history,
+            )
+
+    def get_recording_llm() -> LLM:
+        return RecordingLLM()
+
+    app.dependency_overrides[get_llm] = get_recording_llm
+
+    created = client.post(
+        "/api/chat/sessions",
+        json={"title": "Lessons", "persona_name": "teacher"},
+    )
+
+    assert created.status_code == 201
+    assert created.json()["persona_name"] == "teacher"
+
+    chat_session_id = created.json()["id"]
+    fetched = client.get(f"/api/chat/sessions/{chat_session_id}")
+    sent = client.post(
+        f"/api/chat/sessions/{chat_session_id}/messages",
+        json={"message": "Explain Python"},
+    )
+
+    assert fetched.status_code == 200
+    assert fetched.json() == created.json()
+    assert sent.status_code == 200
+    assert recorded_prompts == [PERSONA_PRESETS["teacher"]]
+
+
+def test_rejects_unknown_persona(client: TestClient) -> None:
+    response = client.post(
+        "/api/chat/sessions",
+        json={"title": "Lessons", "persona_name": "unknown"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_sends_message_and_reads_history(client: TestClient) -> None:

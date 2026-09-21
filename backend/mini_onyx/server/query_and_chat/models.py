@@ -37,6 +37,7 @@ class ChatStreamError(BaseModel):
 
 class CreateChatSessionRequest(BaseModel):
     title: str = Field(max_length=200)
+    persona_name: Literal["teacher", "concise"] | None = None
 
     @field_validator("title")
     @classmethod
@@ -52,6 +53,7 @@ class CreateChatSessionRequest(BaseModel):
 class ChatSessionResponse(BaseModel):
     id: int
     title: str
+    persona_name: str | None
 
 
 class StoredMessageResponse(BaseModel):

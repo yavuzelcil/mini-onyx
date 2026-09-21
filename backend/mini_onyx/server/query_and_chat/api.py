@@ -1,16 +1,15 @@
 from collections.abc import Iterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from mini_onyx.chat.service import generate_reply, stream_reply
+from mini_onyx.chat.service import generate_reply, get_session_or_raise, stream_reply
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.repository import (
     create_chat_session,
     create_message,
-    get_chat_session,
     list_messages,
 )
 from mini_onyx.llm.dependencies import get_llm
@@ -96,16 +95,7 @@ def get_chat_session_route(
     chat_session_id: int,
     db_session: DBSessionDependency,
 ) -> ChatSessionResponse:
-    chat_session = get_chat_session(
-        db_session,
-        chat_session_id=chat_session_id,
-    )
-
-    if chat_session is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Chat session not found.",
-        )
+    chat_session = get_session_or_raise(db_session, chat_session_id=chat_session_id)
 
     return ChatSessionResponse(
         id=chat_session.id,
@@ -121,11 +111,7 @@ def send_session_message(
     llm: LLMDependency,
 ) -> ChatResponse:
     with db_session.begin():
-        if get_chat_session(db_session, chat_session_id=chat_session_id) is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Chat session not found.",
-            )
+        get_session_or_raise(db_session, chat_session_id=chat_session_id)
 
     reply = generate_reply(chat_request.message, llm=llm)
 
@@ -152,11 +138,7 @@ def get_session_messages(
     db_session: DBSessionDependency,
 ) -> list[StoredMessageResponse]:
     with db_session.begin():
-        if get_chat_session(db_session, chat_session_id=chat_session_id) is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Chat session not found.",
-            )
+        get_session_or_raise(db_session, chat_session_id=chat_session_id)
 
         messages = list_messages(db_session, chat_session_id=chat_session_id)
         return [

@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from mini_onyx.chat.exceptions import ChatSessionNotFoundError
@@ -9,9 +9,10 @@ from mini_onyx.chat.service import (
     SYSTEM_PROMPT,
     get_session_or_raise,
     reply_in_chat_session,
+    start_chat_session,
     stream_reply_in_chat_session,
 )
-from mini_onyx.db.models import Base
+from mini_onyx.db.models import Base, Persona, User
 from mini_onyx.db.repository import (
     create_chat_session,
     get_or_create_persona,
@@ -236,5 +237,26 @@ def test_stopped_session_stream_does_not_save_partial_reply() -> None:
             stream.close()
 
             assert list_messages(db_session, chat_session_id=chat_session_id) == []
+    finally:
+        engine.dispose()
+
+
+def test_start_chat_session_links_default_user_and_persona() -> None:
+    engine = create_engine("sqlite+pysqlite://")
+    Base.metadata.create_all(engine)
+
+    try:
+        with Session(engine) as db_session, db_session.begin():
+            first = start_chat_session(db_session, title="A", persona_name="teacher")
+            second = start_chat_session(db_session, title="B", persona_name="teacher")
+            third = start_chat_session(db_session, title="C", persona_name=None)
+
+            assert first.user_id is not None
+            assert first.user_id == second.user_id == third.user_id
+            assert first.persona_id is not None
+            assert first.persona_id == second.persona_id
+            assert third.persona_id is None
+            assert db_session.scalar(select(func.count()).select_from(User)) == 1
+            assert db_session.scalar(select(func.count()).select_from(Persona)) == 1
     finally:
         engine.dispose()

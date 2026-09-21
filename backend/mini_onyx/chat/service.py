@@ -3,10 +3,14 @@ from collections.abc import Generator, Iterator
 from sqlalchemy.orm import Session
 
 from mini_onyx.chat.exceptions import ChatSessionNotFoundError
+from mini_onyx.chat.personas import PERSONA_PRESETS
 from mini_onyx.db.models import ChatSession
 from mini_onyx.db.repository import (
+    create_chat_session,
     create_message,
     get_chat_session,
+    get_or_create_persona,
+    get_or_create_user,
     list_messages,
 )
 from mini_onyx.llm.exceptions import LLMResponseError
@@ -16,6 +20,8 @@ SYSTEM_PROMPT = (
     "You are Mini Onyx, a concise and helpful assistant. "
     "Answer in the same language as the user."
 )
+
+DEFAULT_USER_EMAIL = "default@mini-onyx.local"
 
 
 def generate_reply(
@@ -49,6 +55,31 @@ def get_session_or_raise(
     if chat_session is None:
         raise ChatSessionNotFoundError("Chat session not found.")
     return chat_session
+
+
+def start_chat_session(
+    db_session: Session,
+    *,
+    title: str,
+    persona_name: str | None,
+) -> ChatSession:
+    user = get_or_create_user(db_session, email=DEFAULT_USER_EMAIL)
+
+    persona_id: int | None = None
+    if persona_name is not None:
+        persona = get_or_create_persona(
+            db_session,
+            name=persona_name,
+            system_prompt=PERSONA_PRESETS[persona_name],
+        )
+        persona_id = persona.id
+
+    return create_chat_session(
+        db_session,
+        title=title,
+        user_id=user.id,
+        persona_id=persona_id,
+    )
 
 
 def _load_session_context(

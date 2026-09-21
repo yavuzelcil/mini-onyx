@@ -5,18 +5,16 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from mini_onyx.chat.personas import PERSONA_PRESETS
 from mini_onyx.chat.service import (
     generate_reply,
     get_session_or_raise,
     reply_in_chat_session,
+    start_chat_session,
     stream_reply,
     stream_reply_in_chat_session,
 )
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.repository import (
-    create_chat_session,
-    get_or_create_persona,
     list_messages,
 )
 from mini_onyx.llm.dependencies import get_llm
@@ -87,22 +85,17 @@ def create_chat_session_route(
     db_session: DBSessionDependency,
 ) -> ChatSessionResponse:
     with db_session.begin():
-        persona = None
-        if request.persona_name is not None:
-            persona = get_or_create_persona(
-                db_session,
-                name=request.persona_name,
-                system_prompt=PERSONA_PRESETS[request.persona_name],
-            )
-        chat_session = create_chat_session(
+        chat_session = start_chat_session(
             db_session,
             title=request.title,
-            persona_id=persona.id if persona is not None else None,
+            persona_name=request.persona_name,
         )
         return ChatSessionResponse(
             id=chat_session.id,
             title=chat_session.title,
-            persona_name=persona.name if persona is not None else None,
+            persona_name=(
+                chat_session.persona.name if chat_session.persona is not None else None
+            ),
         )
 
 

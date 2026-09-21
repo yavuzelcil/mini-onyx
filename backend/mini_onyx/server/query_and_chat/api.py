@@ -5,11 +5,15 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from mini_onyx.chat.service import generate_reply, get_session_or_raise, stream_reply
+from mini_onyx.chat.service import (
+    generate_reply,
+    get_session_or_raise,
+    reply_in_chat_session,
+    stream_reply,
+)
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.repository import (
     create_chat_session,
-    create_message,
     list_messages,
 )
 from mini_onyx.llm.dependencies import get_llm
@@ -110,25 +114,12 @@ def send_session_message(
     db_session: DBSessionDependency,
     llm: LLMDependency,
 ) -> ChatResponse:
-    with db_session.begin():
-        get_session_or_raise(db_session, chat_session_id=chat_session_id)
-
-    reply = generate_reply(chat_request.message, llm=llm)
-
-    with db_session.begin():
-        create_message(
-            db_session,
-            chat_session_id=chat_session_id,
-            role="user",
-            content=chat_request.message,
-        )
-        create_message(
-            db_session,
-            chat_session_id=chat_session_id,
-            role="assistant",
-            content=reply,
-        )
-
+    reply = reply_in_chat_session(
+        db_session,
+        chat_session_id=chat_session_id,
+        message=chat_request.message,
+        llm=llm,
+    )
     return ChatResponse(reply=reply)
 
 

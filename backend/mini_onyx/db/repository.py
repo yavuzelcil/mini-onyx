@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mini_onyx.db.models import ChatSession, Message, Persona, User
+from mini_onyx.db.models import ChatSession, Document, Message, Persona, User
 
 
 def create_chat_session(
@@ -88,3 +88,16 @@ def get_or_create_user(
     db_session.add(user)
     db_session.flush()
     return user
+
+
+def create_document(
+    db_session: Session,
+    *,
+    filename: str,
+    object_key: str,
+    content: str,
+) -> Document:
+    document = Document(filename=filename, object_key=object_key, content=content)
+    db_session.add(document)
+    db_session.flush()
+    return document

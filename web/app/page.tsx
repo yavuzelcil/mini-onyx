@@ -9,7 +9,7 @@ import {
   getSessionMessages,
   streamSessionMessage,
 } from "@/lib/chat";
-import type { PersonaName } from "@/lib/chat";
+import PersonaSelect from "@/app/PersonaSelect";
 
 const SESSION_STORAGE_KEY = "mini-onyx-session-id";
 
@@ -23,7 +23,7 @@ export default function HomePage() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
-  const [selectedPersona, setSelectedPersona] = useState<PersonaName | null>(null);
+  const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
@@ -53,12 +53,7 @@ export default function HomePage() {
         }
 
         setSessionId(session.id);
-        setSelectedPersona(
-          session.persona_name === "teacher" ||
-            session.persona_name === "concise"
-            ? session.persona_name
-            : null
-        );
+        setSelectedPersona(session.persona_name);
         setMessages(
           storedMessages.map((stored) => ({
             id: String(stored.id),
@@ -235,24 +230,11 @@ export default function HomePage() {
           </button>
         </header>
 
-        <label className="mt-4 flex items-center gap-3 text-sm text-slate-300">
-          Persona
-          <select
-            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
-            value={selectedPersona ?? ""}
-            onChange={(event) => {
-              const value = event.target.value;
-              setSelectedPersona(
-                value === "teacher" || value === "concise" ? value : null
-              );
-            }}
-            disabled={sessionId !== null || isSubmitting || isLoadingHistory}
-          >
-            <option value="">Default</option>
-            <option value="teacher">Teacher</option>
-            <option value="concise">Concise</option>
-          </select>
-        </label>
+        <PersonaSelect
+          value={selectedPersona}
+          onChange={setSelectedPersona}
+          disabled={sessionId !== null || isSubmitting || isLoadingHistory}
+        />
 
         <div
           className="flex flex-1 flex-col gap-4 py-6"

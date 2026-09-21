@@ -9,6 +9,7 @@ import {
 
 import {
   createChatSession,
+  fetchPersonas,
   getChatSession,
   getSessionMessages,
   sendChatMessage,
@@ -69,6 +70,28 @@ describe("createChatSession", () => {
       }),
     });
     expect(result).toEqual(session);
+  });
+});
+
+describe("fetchPersonas", () => {
+  test("loads the available personas", async () => {
+    const personas = [{ name: "teacher" }, { name: "concise" }];
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json(personas)
+    );
+
+    const result = await fetchPersonas();
+
+    expect(fetchSpy).toHaveBeenCalledWith("/api/chat/personas");
+    expect(result).toEqual(personas);
+  });
+
+  test("rejects an invalid persona list", async () => {
+    spyOn(globalThis, "fetch").mockResolvedValue(Response.json([{ id: 1 }]));
+
+    await expect(fetchPersonas()).rejects.toThrow(
+      "Backend returned invalid personas"
+    );
   });
 });
 

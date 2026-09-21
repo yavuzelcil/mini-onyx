@@ -1,4 +1,6 @@
-export type PersonaName = "teacher" | "concise";
+export interface Persona {
+  name: string;
+}
 
 export interface ChatSession {
   id: number;
@@ -221,6 +223,15 @@ function isChatSession(value: unknown): value is ChatSession {
   );
 }
 
+function isPersona(value: unknown): value is Persona {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof value.name === "string"
+  );
+}
+
 function isStoredMessage(value: unknown): value is StoredMessage {
   return (
     typeof value === "object" &&
@@ -236,7 +247,7 @@ function isStoredMessage(value: unknown): value is StoredMessage {
 
 export async function createChatSession(
   title: string,
-  personaName: PersonaName | null = null
+  personaName: string | null = null
 ): Promise<ChatSession> {
   const response = await fetch("/api/chat/sessions", {
     method: "POST",
@@ -271,6 +282,22 @@ export async function getChatSession(sessionId: number): Promise<ChatSession> {
 
   if (!isChatSession(payload)) {
     throw new Error("Backend returned an invalid chat session");
+  }
+
+  return payload;
+}
+
+export async function fetchPersonas(): Promise<Persona[]> {
+  const response = await fetch("/api/chat/personas");
+
+  if (!response.ok) {
+    throw new Error(`Persona list failed with status ${response.status}`);
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!Array.isArray(payload) || !payload.every(isPersona)) {
+    throw new Error("Backend returned invalid personas");
   }
 
   return payload;

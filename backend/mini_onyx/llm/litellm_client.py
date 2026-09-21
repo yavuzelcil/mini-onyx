@@ -94,20 +94,19 @@ class LiteLLMClient:
         *,
         system_prompt: str,
         user_message: str,
+        history: list[tuple[str, str]] | None = None,
     ) -> Iterator[str]:
+        messages = [{"role": "system", "content": system_prompt}]
+
+        for role, content in history or []:
+            messages.append({"role": role, "content": content})
+
+        messages.append({"role": "user", "content": user_message})
+
         try:
             response = litellm.completion(
                 model=self._model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {
-                        "role": "user",
-                        "content": user_message,
-                    },
-                ],
+                messages=messages,
                 stream=True,
             )
 

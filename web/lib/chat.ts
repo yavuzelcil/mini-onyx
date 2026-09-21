@@ -121,7 +121,8 @@ export async function sendChatMessage(
   return payload;
 }
 
-export async function* streamChatMessage(
+async function* streamChatAtEndpoint(
+  endpoint: string,
   message: string,
   signal?: AbortSignal
 ): AsyncGenerator<ChatStreamPacket, void, unknown> {
@@ -129,7 +130,7 @@ export async function* streamChatMessage(
     message,
   };
 
-  const response = await fetch(CHAT_STREAM_ENDPOINT, {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -186,6 +187,25 @@ export async function* streamChatMessage(
   }
 }
 
+export async function* streamChatMessage(
+  message: string,
+  signal?: AbortSignal
+): AsyncGenerator<ChatStreamPacket, void, unknown> {
+  yield* streamChatAtEndpoint(CHAT_STREAM_ENDPOINT, message, signal);
+}
+
+export async function* streamSessionMessage(
+  sessionId: number,
+  message: string,
+  signal?: AbortSignal
+): AsyncGenerator<ChatStreamPacket, void, unknown> {
+  yield* streamChatAtEndpoint(
+    `/api/chat/sessions/${sessionId}/messages/stream`,
+    message,
+    signal
+  );
+}
+
 
 function isChatSession(value: unknown): value is ChatSession {
   return (
@@ -229,6 +249,22 @@ export async function createChatSession(
 
   if (!response.ok) {
     throw new Error(`Session creation failed with status ${response.status}`);
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!isChatSession(payload)) {
+    throw new Error("Backend returned an invalid chat session");
+  }
+
+  return payload;
+}
+
+export async function getChatSession(sessionId: number): Promise<ChatSession> {
+  const response = await fetch(`/api/chat/sessions/${sessionId}`);
+
+  if (!response.ok) {
+    throw new Error(`Session lookup failed with status ${response.status}`);
   }
 
   const payload: unknown = await response.json();

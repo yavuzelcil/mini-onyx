@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from mini_onyx.db.repository import (
     get_chat_session,
     list_messages,
 )
+from mini_onyx.llm.exceptions import LLMResponseError
 from mini_onyx.llm.interfaces import LLM
 
 SYSTEM_PROMPT = (
@@ -50,13 +51,11 @@ def get_session_or_raise(
     return chat_session
 
 
-def reply_in_chat_session(
+def _load_session_context(
     db_session: Session,
     *,
     chat_session_id: int,
-    message: str,
-    llm: LLM,
-) -> str:
+) -> tuple[str, list[tuple[str, str]]]:
     with db_session.begin():
         chat_session = get_session_or_raise(
             db_session,
@@ -74,6 +73,20 @@ def reply_in_chat_session(
                 chat_session_id=chat_session_id,
             )
         ]
+
+    return system_prompt, history
+
+
+def reply_in_chat_session(
+    db_session: Session,
+    *,
+    chat_session_id: int,
+    message: str,
+    llm: LLM,
+) -> str:
+    system_prompt, history = _load_session_context(
+        db_session, chat_session_id=chat_session_id
+    )
 
     reply = llm.invoke(
         system_prompt=system_prompt,
@@ -96,3 +109,42 @@ def reply_in_chat_session(
         )
 
     return reply
+
+
+def stream_reply_in_chat_session(
+    db_session: Session,
+    *,
+    chat_session_id: int,
+    message: str,
+    llm: LLM,
+) -> Generator[str]:
+    system_prompt, history = _load_session_context(
+        db_session, chat_session_id=chat_session_id
+    )
+
+    reply_parts: list[str] = []
+    for content in llm.stream(
+        system_prompt=system_prompt,
+        user_message=message,
+        history=history,
+    ):
+        reply_parts.append(content)
+        yield content
+
+    reply = "".join(reply_parts)
+    if not reply.strip():
+        raise LLMResponseError("The LLM provider returned an empty response.")
+
+    with db_session.begin():
+        create_message(
+            db_session,
+            chat_session_id=chat_session_id,
+            role="user",
+            content=message,
+        )
+        create_message(
+            db_session,
+            chat_session_id=chat_session_id,
+            role="assistant",
+            content=reply,
+        )

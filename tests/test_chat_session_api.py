@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterator
 
 import pytest
@@ -25,7 +26,13 @@ class FakeLLM:
     ) -> str:
         return f"Fake yanıt: {user_message}"
 
-    def stream(self, *, system_prompt: str, user_message: str) -> Iterator[str]:
+    def stream(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        history: list[tuple[str, str]] | None = None,
+    ) -> Iterator[str]:
         yield f"Fake yanıt: {user_message}"
 
 
@@ -39,7 +46,13 @@ class FailingLLM:
     ) -> str:
         raise LLMConnectionError("Test için LLM hatası")
 
-    def stream(self, *, system_prompt: str, user_message: str) -> Iterator[str]:
+    def stream(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        history: list[tuple[str, str]] | None = None,
+    ) -> Iterator[str]:
         raise LLMConnectionError("Test için LLM hatası")
 
 
@@ -205,3 +218,54 @@ def test_llm_failure_does_not_save_messages(client: TestClient) -> None:
     assert sent.status_code == 502
     assert history.status_code == 200
     assert history.json() == []
+
+
+def test_session_stream_saves_reply_after_done(client: TestClient) -> None:
+    created = client.post("/api/chat/sessions", json={"title": "Stream test"})
+    chat_session_id = created.json()["id"]
+
+    response = client.post(
+        f"/api/chat/sessions/{chat_session_id}/messages/stream",
+        json={"message": "Hello"},
+    )
+
+    packets = [json.loads(line) for line in response.text.splitlines()]
+    history = client.get(f"/api/chat/sessions/{chat_session_id}/messages")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert packets == [
+        {"type": "content_delta", "content": "Fake yanıt: Hello"},
+        {"type": "done"},
+    ]
+    assert [(item["role"], item["content"]) for item in history.json()] == [
+        ("user", "Hello"),
+        ("assistant", "Fake yanıt: Hello"),
+    ]
+
+
+def test_failed_session_stream_does_not_save_messages(client: TestClient) -> None:
+    created = client.post("/api/chat/sessions", json={"title": "Stream test"})
+    chat_session_id = created.json()["id"]
+    app.dependency_overrides[get_llm] = get_failing_llm
+
+    response = client.post(
+        f"/api/chat/sessions/{chat_session_id}/messages/stream",
+        json={"message": "Hello"},
+    )
+    history = client.get(f"/api/chat/sessions/{chat_session_id}/messages")
+
+    assert response.status_code == 200
+    assert [json.loads(line)["type"] for line in response.text.splitlines()] == [
+        "error"
+    ]
+    assert history.json() == []
+
+
+def test_session_stream_returns_404_for_missing_session(client: TestClient) -> None:
+    response = client.post(
+        "/api/chat/sessions/999/messages/stream",
+        json={"message": "Hello"},
+    )
+
+    assert response.status_code == 404

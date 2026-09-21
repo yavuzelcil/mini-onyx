@@ -27,6 +27,7 @@ class FakeLLM:
         *,
         system_prompt: str,
         user_message: str,
+        history: list[tuple[str, str]] | None = None,
     ) -> Iterator[str]:
         assert system_prompt == SYSTEM_PROMPT
         yield "Fake LLM "
@@ -48,6 +49,7 @@ class FailingLLM:
         *,
         system_prompt: str,
         user_message: str,
+        history: list[tuple[str, str]] | None = None,
     ) -> Iterator[str]:
         raise LLMConnectionError("The LLM provider could not be reached.")
 

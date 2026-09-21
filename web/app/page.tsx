@@ -1,9 +1,17 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { streamChatMessage } from "@/lib/chat";
+import {
+  createChatSession,
+  getChatSession,
+  getSessionMessages,
+  streamSessionMessage,
+} from "@/lib/chat";
+import type { PersonaName } from "@/lib/chat";
+
+const SESSION_STORAGE_KEY = "mini-onyx-session-id";
 
 interface ChatMessage {
   id: string;
@@ -14,9 +22,70 @@ interface ChatMessage {
 export default function HomePage() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [selectedPersona, setSelectedPersona] = useState<PersonaName | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const savedId = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    const parsedId = Number(savedId);
+
+    if (!savedId || !Number.isInteger(parsedId) || parsedId < 1) {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      setIsLoadingHistory(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function restoreSession(): Promise<void> {
+      try {
+        const [session, storedMessages] = await Promise.all([
+          getChatSession(parsedId),
+          getSessionMessages(parsedId),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setSessionId(session.id);
+        setSelectedPersona(
+          session.persona_name === "teacher" ||
+            session.persona_name === "concise"
+            ? session.persona_name
+            : null
+        );
+        setMessages(
+          storedMessages.map((stored) => ({
+            id: String(stored.id),
+            role: stored.role,
+            content: stored.content,
+          }))
+        );
+      } catch (restoreError: unknown) {
+        if (!cancelled) {
+          setError(
+            restoreError instanceof Error
+              ? restoreError.message
+              : "Could not restore chat history"
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingHistory(false);
+        }
+      }
+    }
+
+    void restoreSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>
@@ -25,7 +94,7 @@ export default function HomePage() {
 
     const normalizedMessage = message.trim();
 
-    if (!normalizedMessage || isSubmitting) {
+    if (!normalizedMessage || isSubmitting || isLoadingHistory) {
       return;
     }
 
@@ -39,24 +108,34 @@ export default function HomePage() {
     setIsSubmitting(true);
     setMessage("");
 
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      {
-        id: userMessageId,
-        role: "user",
-        content: normalizedMessage,
-      },
-      {
-        id: assistantMessageId,
-        role: "assistant",
-        content: "",
-      },
-    ]);
-
     let receivedDone = false;
+    let messagesAdded = false;
 
     try {
-      for await (const packet of streamChatMessage(
+      let activeSessionId = sessionId;
+      if (activeSessionId === null) {
+        const session = await createChatSession(
+          normalizedMessage.slice(0, 80),
+          selectedPersona
+        );
+        activeSessionId = session.id;
+        setSessionId(session.id);
+        window.localStorage.setItem(SESSION_STORAGE_KEY, String(session.id));
+      }
+
+      if (abortController.signal.aborted) {
+        throw new DOMException("Chat stopped", "AbortError");
+      }
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        { id: userMessageId, role: "user", content: normalizedMessage },
+        { id: assistantMessageId, role: "assistant", content: "" },
+      ]);
+      messagesAdded = true;
+
+      for await (const packet of streamSessionMessage(
+        activeSessionId,
         normalizedMessage,
         abortController.signal
       )) {
@@ -87,6 +166,17 @@ export default function HomePage() {
         throw new Error("Chat stream ended unexpectedly");
       }
     } catch (requestError: unknown) {
+      if (messagesAdded) {
+        setMessages((currentMessages) =>
+          currentMessages.filter(
+            (chatMessage) =>
+              chatMessage.id !== userMessageId &&
+              chatMessage.id !== assistantMessageId
+          )
+        );
+      }
+      setMessage(normalizedMessage);
+
       if (
         requestError instanceof DOMException &&
         requestError.name === "AbortError"
@@ -113,21 +203,64 @@ export default function HomePage() {
     abortControllerRef.current?.abort();
   }
 
+  function handleNewChat(): void {
+    if (isSubmitting || isLoadingHistory) {
+      return;
+    }
+
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    setSessionId(null);
+    setSelectedPersona(null);
+    setMessages([]);
+    setError(null);
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 px-6 py-12 text-slate-100">
       <section className="mx-auto flex min-h-[80vh] max-w-3xl flex-col rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-        <header className="border-b border-slate-800 pb-4">
-          <h1 className="text-2xl font-semibold">Mini Onyx</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            First end-to-end chat flow
-          </p>
+        <header className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Mini Onyx</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              {sessionId === null ? "New chat" : `Chat #${sessionId}`}
+            </p>
+          </div>
+          <button
+            className="rounded-lg border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800 disabled:opacity-50"
+            type="button"
+            onClick={handleNewChat}
+            disabled={isSubmitting || isLoadingHistory}
+          >
+            New chat
+          </button>
         </header>
+
+        <label className="mt-4 flex items-center gap-3 text-sm text-slate-300">
+          Persona
+          <select
+            className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2"
+            value={selectedPersona ?? ""}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSelectedPersona(
+                value === "teacher" || value === "concise" ? value : null
+              );
+            }}
+            disabled={sessionId !== null || isSubmitting || isLoadingHistory}
+          >
+            <option value="">Default</option>
+            <option value="teacher">Teacher</option>
+            <option value="concise">Concise</option>
+          </select>
+        </label>
 
         <div
           className="flex flex-1 flex-col gap-4 py-6"
           aria-live="polite"
         >
-          {messages.length === 0 ? (
+          {isLoadingHistory ? (
+            <p className="text-center text-slate-500">Loading chat history...</p>
+          ) : messages.length === 0 ? (
             <p className="text-center text-slate-500">
               Send a message to start.
             </p>
@@ -172,7 +305,7 @@ export default function HomePage() {
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             placeholder="Write a message..."
-            disabled={isSubmitting}
+            disabled={isSubmitting || isLoadingHistory}
           />
 
           {isSubmitting ? (
@@ -187,7 +320,7 @@ export default function HomePage() {
             <button
               className="rounded-lg bg-blue-600 px-5 py-3 font-medium hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
               type="submit"
-              disabled={!message.trim()}
+              disabled={!message.trim() || isLoadingHistory}
             >
               Send
             </button>

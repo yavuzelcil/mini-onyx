@@ -9,9 +9,11 @@ import {
 
 import {
   createChatSession,
+  getChatSession,
   getSessionMessages,
   sendChatMessage,
   streamChatMessage,
+  streamSessionMessage,
 } from "@/lib/chat";
 import type { StoredMessage } from "@/lib/chat";
 
@@ -89,6 +91,20 @@ describe("getSessionMessages", () => {
   });
 });
 
+describe("getChatSession", () => {
+  test("loads a saved session and its persona", async () => {
+    const session = { id: 7, title: "Ders", persona_name: "teacher" };
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json(session)
+    );
+
+    const result = await getChatSession(7);
+
+    expect(fetchSpy).toHaveBeenCalledWith("/api/chat/sessions/7");
+    expect(result).toEqual(session);
+  });
+});
+
 describe("streamChatMessage", () => {
   test("reads NDJSON packets across network chunks", async () => {
     const encoder = new TextEncoder();
@@ -153,6 +169,48 @@ describe("streamChatMessage", () => {
       {
         type: "done",
       },
+    ]);
+  });
+});
+
+describe("streamSessionMessage", () => {
+  test("streams a reply through the saved session endpoint", async () => {
+    const controller = new AbortController();
+    const body = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        streamController.enqueue(
+          new TextEncoder().encode(
+            '{"type":"content_delta","content":"Hello"}\n{"type":"done"}\n'
+          )
+        );
+        streamController.close();
+      },
+    });
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(body, { status: 200 })
+    );
+
+    const packets = [];
+    for await (const packet of streamSessionMessage(
+      7,
+      "Hi",
+      controller.signal
+    )) {
+      packets.push(packet);
+    }
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/chat/sessions/7/messages/stream",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Hi" }),
+        signal: controller.signal,
+      }
+    );
+    expect(packets).toEqual([
+      { type: "content_delta", content: "Hello" },
+      { type: "done" },
     ]);
   });
 });

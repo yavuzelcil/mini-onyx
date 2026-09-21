@@ -18,6 +18,7 @@ class LLM(Protocol):
         *,
         system_prompt: str,
         user_message: str,
+        history: list[tuple[str, str]] | None = None,
     ) -> Iterator[str]:
         """Generate one assistant response as text chunks."""
         ...

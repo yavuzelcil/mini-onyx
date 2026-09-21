@@ -9,6 +9,7 @@ from mini_onyx.chat.service import (
     SYSTEM_PROMPT,
     get_session_or_raise,
     reply_in_chat_session,
+    stream_reply_in_chat_session,
 )
 from mini_onyx.db.models import Base
 from mini_onyx.db.repository import (
@@ -21,6 +22,7 @@ from mini_onyx.db.repository import (
 class RecordingLLM:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, list[tuple[str, str]] | None]] = []
+        self.stream_calls: list[tuple[str, str, list[tuple[str, str]] | None]] = []
 
     def invoke(
         self,
@@ -32,8 +34,16 @@ class RecordingLLM:
         self.calls.append((system_prompt, user_message, history))
         return f"Yanıt: {user_message}"
 
-    def stream(self, *, system_prompt: str, user_message: str) -> Iterator[str]:
-        yield f"Yanıt: {user_message}"
+    def stream(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        history: list[tuple[str, str]] | None = None,
+    ) -> Iterator[str]:
+        self.stream_calls.append((system_prompt, user_message, history))
+        yield "Yanıt: "
+        yield user_message
 
 
 def test_get_session_or_raise_returns_existing_session() -> None:
@@ -149,5 +159,82 @@ def test_second_reply_receives_previous_messages_as_history() -> None:
             "user",
             "assistant",
         ]
+    finally:
+        engine.dispose()
+
+
+def test_session_stream_uses_history_and_saves_completed_replies() -> None:
+    engine = create_engine("sqlite+pysqlite://")
+    Base.metadata.create_all(engine)
+    llm = RecordingLLM()
+
+    try:
+        with Session(engine) as db_session:
+            with db_session.begin():
+                persona = get_or_create_persona(
+                    db_session, name="teacher", system_prompt="Teach patiently."
+                )
+                chat_session = create_chat_session(
+                    db_session, title="Test", persona_id=persona.id
+                )
+                chat_session_id = chat_session.id
+
+            first = list(
+                stream_reply_in_chat_session(
+                    db_session,
+                    chat_session_id=chat_session_id,
+                    message="Hello",
+                    llm=llm,
+                )
+            )
+            second = list(
+                stream_reply_in_chat_session(
+                    db_session,
+                    chat_session_id=chat_session_id,
+                    message="Again",
+                    llm=llm,
+                )
+            )
+            stored = list_messages(db_session, chat_session_id=chat_session_id)
+
+        assert first == ["Yanıt: ", "Hello"]
+        assert second == ["Yanıt: ", "Again"]
+        assert llm.stream_calls[0] == ("Teach patiently.", "Hello", [])
+        assert llm.stream_calls[1] == (
+            "Teach patiently.",
+            "Again",
+            [("user", "Hello"), ("assistant", "Yanıt: Hello")],
+        )
+        assert [(item.role, item.content) for item in stored] == [
+            ("user", "Hello"),
+            ("assistant", "Yanıt: Hello"),
+            ("user", "Again"),
+            ("assistant", "Yanıt: Again"),
+        ]
+    finally:
+        engine.dispose()
+
+
+def test_stopped_session_stream_does_not_save_partial_reply() -> None:
+    engine = create_engine("sqlite+pysqlite://")
+    Base.metadata.create_all(engine)
+    llm = RecordingLLM()
+
+    try:
+        with Session(engine) as db_session:
+            with db_session.begin():
+                chat_session = create_chat_session(db_session, title="Test")
+                chat_session_id = chat_session.id
+
+            stream = stream_reply_in_chat_session(
+                db_session,
+                chat_session_id=chat_session_id,
+                message="Hello",
+                llm=llm,
+            )
+            assert next(stream) == "Yanıt: "
+            stream.close()
+
+            assert list_messages(db_session, chat_session_id=chat_session_id) == []
     finally:
         engine.dispose()

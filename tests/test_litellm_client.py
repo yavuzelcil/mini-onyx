@@ -197,3 +197,41 @@ def test_litellm_client_sends_chat_history_in_order() -> None:
         ],
         stream=False,
     )
+
+
+def test_litellm_client_streams_with_chat_history() -> None:
+    chunk = ModelResponseStream(
+        model="gpt-5-mini",
+        choices=[
+            StreamingChoices(
+                index=0,
+                finish_reason=None,
+                delta=Delta(role="assistant", content="Ada"),
+            )
+        ],
+    )
+    client = LiteLLMClient(model="openai/gpt-5-mini")
+
+    with patch(
+        "mini_onyx.llm.litellm_client.litellm.completion",
+        return_value=iter([chunk]),
+    ) as completion_mock:
+        result = list(
+            client.stream(
+                system_prompt="Be helpful.",
+                history=[("user", "My name is Ada"), ("assistant", "Hello Ada")],
+                user_message="What is my name?",
+            )
+        )
+
+    assert result == ["Ada"]
+    completion_mock.assert_called_once_with(
+        model="openai/gpt-5-mini",
+        messages=[
+            {"role": "system", "content": "Be helpful."},
+            {"role": "user", "content": "My name is Ada"},
+            {"role": "assistant", "content": "Hello Ada"},
+            {"role": "user", "content": "What is my name?"},
+        ],
+        stream=True,
+    )

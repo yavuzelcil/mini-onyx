@@ -11,6 +11,7 @@ from mini_onyx.chat.service import (
     get_session_or_raise,
     reply_in_chat_session,
     stream_reply,
+    stream_reply_in_chat_session,
 )
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.repository import (
@@ -135,6 +136,35 @@ def send_session_message(
         llm=llm,
     )
     return ChatResponse(reply=reply)
+
+
+@router.post("/sessions/{chat_session_id}/messages/stream")
+def stream_session_message(
+    chat_session_id: int,
+    chat_request: ChatRequest,
+    db_session: DBSessionDependency,
+    llm: LLMDependency,
+) -> StreamingResponse:
+    with db_session.begin():
+        get_session_or_raise(db_session, chat_session_id=chat_session_id)
+
+    def generate_ndjson() -> Iterator[str]:
+        try:
+            for content in stream_reply_in_chat_session(
+                db_session,
+                chat_session_id=chat_session_id,
+                message=chat_request.message,
+                llm=llm,
+            ):
+                packet = ChatStreamDelta(content=content)
+                yield f"{packet.model_dump_json()}\n"
+
+            yield f"{ChatStreamDone().model_dump_json()}\n"
+        except LLMError as error:
+            packet = ChatStreamError(detail=str(error))
+            yield f"{packet.model_dump_json()}\n"
+
+    return StreamingResponse(generate_ndjson(), media_type="application/x-ndjson")
 
 
 @router.get("/sessions/{chat_session_id}/messages")

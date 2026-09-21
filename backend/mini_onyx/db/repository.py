@@ -1,15 +1,21 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mini_onyx.db.models import ChatSession, Message
+from mini_onyx.db.models import ChatSession, Message, Persona, User
 
 
 def create_chat_session(
     db_session: Session,
     *,
     title: str,
+    user_id: int | None = None,
+    persona_id: int | None = None,
 ) -> ChatSession:
-    chat_session = ChatSession(title=title)
+    chat_session = ChatSession(
+        title=title,
+        user_id=user_id,
+        persona_id=persona_id,
+    )
     db_session.add(chat_session)
     db_session.flush()
     return chat_session
@@ -51,3 +57,34 @@ def get_chat_session(
     chat_session_id: int,
 ) -> ChatSession | None:
     return db_session.get(ChatSession, chat_session_id)
+
+
+def get_or_create_persona(
+    db_session: Session,
+    *,
+    name: str,
+    system_prompt: str,
+) -> Persona:
+    persona = db_session.scalar(select(Persona).where(Persona.name == name))
+    if persona is not None:
+        return persona
+
+    persona = Persona(name=name, system_prompt=system_prompt)
+    db_session.add(persona)
+    db_session.flush()
+    return persona
+
+
+def get_or_create_user(
+    db_session: Session,
+    *,
+    email: str,
+) -> User:
+    user = db_session.scalar(select(User).where(User.email == email))
+    if user is not None:
+        return user
+
+    user = User(email=email)
+    db_session.add(user)
+    db_session.flush()
+    return user

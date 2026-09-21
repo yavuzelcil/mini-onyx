@@ -6,6 +6,8 @@ from mini_onyx.db.models import Base
 from mini_onyx.db.repository import (
     create_chat_session,
     create_message,
+    get_or_create_persona,
+    get_or_create_user,
     list_messages,
 )
 
@@ -49,5 +51,34 @@ def test_repository_persists_chat_and_messages() -> None:
             "Generator nedir?",
             "Değerleri sırayla üretir.",
         ]
+    finally:
+        engine.dispose()
+
+
+def test_get_or_create_is_idempotent_and_links_chat_session() -> None:
+    engine = create_database_engine(DatabaseSettings(url="sqlite+pysqlite:///:memory:"))
+    Base.metadata.create_all(engine)
+
+    try:
+        with Session(engine) as db_session:
+            with db_session.begin():
+                first_persona = get_or_create_persona(
+                    db_session, name="default", system_prompt="Be concise."
+                )
+                second_persona = get_or_create_persona(
+                    db_session, name="default", system_prompt="Ignored."
+                )
+                user = get_or_create_user(db_session, email="me@example.com")
+                chat_session = create_chat_session(
+                    db_session,
+                    title="Python",
+                    user_id=user.id,
+                    persona_id=first_persona.id,
+                )
+
+                assert first_persona.id == second_persona.id
+                assert second_persona.system_prompt == "Be concise."
+                assert chat_session.persona_id == first_persona.id
+                assert chat_session.user_id == user.id
     finally:
         engine.dispose()

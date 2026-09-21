@@ -10,6 +10,8 @@ def test_chat_models_register_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "chat_sessions",
         "messages",
+        "personas",
+        "users",
     }
 
 

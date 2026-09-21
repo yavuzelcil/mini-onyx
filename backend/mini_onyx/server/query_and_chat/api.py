@@ -9,7 +9,9 @@ from mini_onyx.chat.service import generate_reply, stream_reply
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.repository import (
     create_chat_session,
+    create_message,
     get_chat_session,
+    list_messages,
 )
 from mini_onyx.llm.dependencies import get_llm
 from mini_onyx.llm.exceptions import LLMError
@@ -22,6 +24,7 @@ from mini_onyx.server.query_and_chat.models import (
     ChatStreamDone,
     ChatStreamError,
     CreateChatSessionRequest,
+    StoredMessageResponse,
 )
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -108,3 +111,57 @@ def get_chat_session_route(
         id=chat_session.id,
         title=chat_session.title,
     )
+
+
+@router.post("/sessions/{chat_session_id}/messages")
+def send_session_message(
+    chat_session_id: int,
+    chat_request: ChatRequest,
+    db_session: DBSessionDependency,
+    llm: LLMDependency,
+) -> ChatResponse:
+    with db_session.begin():
+        if get_chat_session(db_session, chat_session_id=chat_session_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat session not found.",
+            )
+
+    reply = generate_reply(chat_request.message, llm=llm)
+
+    with db_session.begin():
+        create_message(
+            db_session,
+            chat_session_id=chat_session_id,
+            role="user",
+            content=chat_request.message,
+        )
+        create_message(
+            db_session,
+            chat_session_id=chat_session_id,
+            role="assistant",
+            content=reply,
+        )
+
+    return ChatResponse(reply=reply)
+
+
+@router.get("/sessions/{chat_session_id}/messages")
+def get_session_messages(
+    chat_session_id: int,
+    db_session: DBSessionDependency,
+) -> list[StoredMessageResponse]:
+    with db_session.begin():
+        if get_chat_session(db_session, chat_session_id=chat_session_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Chat session not found.",
+            )
+
+        messages = list_messages(db_session, chat_session_id=chat_session_id)
+        return [
+            StoredMessageResponse(
+                id=message.id, role=message.role, content=message.content
+            )
+            for message in messages
+        ]

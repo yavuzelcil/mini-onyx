@@ -52,3 +52,9 @@ class CreateChatSessionRequest(BaseModel):
 class ChatSessionResponse(BaseModel):
     id: int
     title: str
+
+
+class StoredMessageResponse(BaseModel):
+    id: int
+    role: str
+    content: str

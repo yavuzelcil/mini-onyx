@@ -8,7 +8,34 @@ from sqlalchemy.pool import StaticPool
 
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.models import Base
+from mini_onyx.llm.dependencies import get_llm
+from mini_onyx.llm.exceptions import LLMConnectionError
+from mini_onyx.llm.interfaces import LLM
 from mini_onyx.main import app
+
+
+class FakeLLM:
+    def invoke(self, *, system_prompt: str, user_message: str) -> str:
+        return f"Fake yanıt: {user_message}"
+
+    def stream(self, *, system_prompt: str, user_message: str) -> Iterator[str]:
+        yield f"Fake yanıt: {user_message}"
+
+
+class FailingLLM:
+    def invoke(self, *, system_prompt: str, user_message: str) -> str:
+        raise LLMConnectionError("Test için LLM hatası")
+
+    def stream(self, *, system_prompt: str, user_message: str) -> Iterator[str]:
+        raise LLMConnectionError("Test için LLM hatası")
+
+
+def get_fake_llm() -> LLM:
+    return FakeLLM()
+
+
+def get_failing_llm() -> LLM:
+    return FailingLLM()
 
 
 @pytest.fixture
@@ -25,12 +52,14 @@ def client() -> Iterator[TestClient]:
             yield db_session
 
     app.dependency_overrides[get_db_session] = get_test_db_session
+    app.dependency_overrides[get_llm] = get_fake_llm
 
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         app.dependency_overrides.pop(get_db_session, None)
+        app.dependency_overrides.pop(get_llm, None)
         engine.dispose()
 
 
@@ -54,3 +83,58 @@ def test_missing_chat_session_returns_404(client: TestClient) -> None:
     response = client.get("/api/chat/sessions/999")
 
     assert response.status_code == 404
+
+
+def test_sends_message_and_reads_history(client: TestClient) -> None:
+    created = client.post(
+        "/api/chat/sessions",
+        json={"title": "Test sohbeti"},
+    )
+    chat_session_id = created.json()["id"]
+
+    sent = client.post(
+        f"/api/chat/sessions/{chat_session_id}/messages",
+        json={"message": " Merhaba "},
+    )
+
+    assert sent.status_code == 200
+    assert sent.json() == {"reply": "Fake yanıt: Merhaba"}
+
+    history = client.get(f"/api/chat/sessions/{chat_session_id}/messages")
+
+    assert history.status_code == 200
+    assert [(message["role"], message["content"]) for message in history.json()] == [
+        ("user", "Merhaba"),
+        ("assistant", "Fake yanıt: Merhaba"),
+    ]
+
+
+def test_messages_for_missing_session_return_404(client: TestClient) -> None:
+    sent = client.post(
+        "/api/chat/sessions/999/messages",
+        json={"message": "Merhaba"},
+    )
+    history = client.get("/api/chat/sessions/999/messages")
+
+    assert sent.status_code == 404
+    assert history.status_code == 404
+
+
+def test_llm_failure_does_not_save_messages(client: TestClient) -> None:
+    created = client.post(
+        "/api/chat/sessions",
+        json={"title": "Hata testi"},
+    )
+    chat_session_id = created.json()["id"]
+
+    app.dependency_overrides[get_llm] = get_failing_llm
+
+    sent = client.post(
+        f"/api/chat/sessions/{chat_session_id}/messages",
+        json={"message": "Merhaba"},
+    )
+    history = client.get(f"/api/chat/sessions/{chat_session_id}/messages")
+
+    assert sent.status_code == 502
+    assert history.status_code == 200
+    assert history.json() == []

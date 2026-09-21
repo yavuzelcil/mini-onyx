@@ -43,3 +43,11 @@ def list_messages(
         .order_by(Message.id)
     )
     return list(db_session.scalars(statement))
+
+
+def get_chat_session(
+    db_session: Session,
+    *,
+    chat_session_id: int,
+) -> ChatSession | None:
+    return db_session.get(ChatSession, chat_session_id)

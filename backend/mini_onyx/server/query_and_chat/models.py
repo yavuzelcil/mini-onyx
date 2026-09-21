@@ -33,3 +33,22 @@ class ChatStreamDone(BaseModel):
 class ChatStreamError(BaseModel):
     type: Literal["error"] = "error"
     detail: str
+
+
+class CreateChatSessionRequest(BaseModel):
+    title: str = Field(max_length=200)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        title = value.strip()
+
+        if not title:
+            raise ValueError("Title must not be blank")
+
+        return title
+
+
+class ChatSessionResponse(BaseModel):
+    id: int
+    title: str

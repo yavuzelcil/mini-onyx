@@ -158,3 +158,42 @@ def test_litellm_client_streams_content_chunks() -> None:
         ],
         stream=True,
     )
+
+
+def test_litellm_client_sends_chat_history_in_order() -> None:
+    response = ModelResponse(
+        model="gpt-5-mini",
+        choices=[
+            {
+                "index": 0,
+                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": "Adın Ayşe."},
+            }
+        ],
+    )
+    client = LiteLLMClient(model="openai/gpt-5-mini")
+
+    with patch(
+        "mini_onyx.llm.litellm_client.litellm.completion",
+        return_value=response,
+    ) as completion_mock:
+        result = client.invoke(
+            system_prompt="You are a helpful assistant.",
+            history=[
+                ("user", "Benim adım Ayşe"),
+                ("assistant", "Memnun oldum Ayşe"),
+            ],
+            user_message="Benim adım ne?",
+        )
+
+    assert result == "Adın Ayşe."
+    completion_mock.assert_called_once_with(
+        model="openai/gpt-5-mini",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Benim adım Ayşe"},
+            {"role": "assistant", "content": "Memnun oldum Ayşe"},
+            {"role": "user", "content": "Benim adım ne?"},
+        ],
+        stream=False,
+    )

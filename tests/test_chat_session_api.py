@@ -15,7 +15,13 @@ from mini_onyx.main import app
 
 
 class FakeLLM:
-    def invoke(self, *, system_prompt: str, user_message: str) -> str:
+    def invoke(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        history: list[tuple[str, str]] | None = None,
+    ) -> str:
         return f"Fake yanıt: {user_message}"
 
     def stream(self, *, system_prompt: str, user_message: str) -> Iterator[str]:
@@ -23,7 +29,13 @@ class FakeLLM:
 
 
 class FailingLLM:
-    def invoke(self, *, system_prompt: str, user_message: str) -> str:
+    def invoke(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        history: list[tuple[str, str]] | None = None,
+    ) -> str:
         raise LLMConnectionError("Test için LLM hatası")
 
     def stream(self, *, system_prompt: str, user_message: str) -> Iterator[str]:

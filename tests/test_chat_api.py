@@ -17,6 +17,7 @@ class FakeLLM:
         *,
         system_prompt: str,
         user_message: str,
+        history: list[tuple[str, str]] | None = None,
     ) -> str:
         assert system_prompt == SYSTEM_PROMPT
         return f"Fake LLM response: {user_message}"
@@ -38,6 +39,7 @@ class FailingLLM:
         *,
         system_prompt: str,
         user_message: str,
+        history: list[tuple[str, str]] | None = None,
     ) -> str:
         raise LLMConnectionError("The LLM provider could not be reached.")
 

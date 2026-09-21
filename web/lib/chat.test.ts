@@ -7,7 +7,13 @@ import {
   test,
 } from "bun:test";
 
-import { sendChatMessage, streamChatMessage } from "@/lib/chat";
+import {
+  createChatSession,
+  getSessionMessages,
+  sendChatMessage,
+  streamChatMessage,
+} from "@/lib/chat";
+import type { StoredMessage } from "@/lib/chat";
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -36,6 +42,50 @@ describe("sendChatMessage", () => {
     expect(response).toEqual({
       reply: "Mini Onyx received: Hello",
     });
+  });
+});
+
+describe("createChatSession", () => {
+  test("creates a session with the selected persona", async () => {
+    const session = {
+      id: 7,
+      title: "Ders",
+      persona_name: "teacher",
+    };
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json(session, { status: 201 })
+    );
+
+    const result = await createChatSession("Ders", "teacher");
+
+    expect(fetchSpy).toHaveBeenCalledWith("/api/chat/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Ders",
+        persona_name: "teacher",
+      }),
+    });
+    expect(result).toEqual(session);
+  });
+});
+
+describe("getSessionMessages", () => {
+  test("returns user and assistant messages for a session", async () => {
+    const messages: StoredMessage[] = [
+      { id: 1, role: "user", content: "Merhaba" },
+      { id: 2, role: "assistant", content: "Selam" },
+    ];
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json(messages)
+    );
+
+    const result = await getSessionMessages(7);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/chat/sessions/7/messages"
+    );
+    expect(result).toEqual(messages);
   });
 });
 

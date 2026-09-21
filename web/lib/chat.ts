@@ -1,3 +1,17 @@
+export type PersonaName = "teacher" | "concise";
+
+export interface ChatSession {
+  id: number;
+  title: string;
+  persona_name: string | null;
+}
+
+export interface StoredMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+}
+
 const CHAT_ENDPOINT = "/api/chat";
 const CHAT_STREAM_ENDPOINT = "/api/chat/stream";
 
@@ -170,4 +184,76 @@ export async function* streamChatMessage(
   } finally {
     reader.releaseLock();
   }
+}
+
+
+function isChatSession(value: unknown): value is ChatSession {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "number" &&
+    "title" in value &&
+    typeof value.title === "string" &&
+    "persona_name" in value &&
+    (value.persona_name === null ||
+      typeof value.persona_name === "string")
+  );
+}
+
+function isStoredMessage(value: unknown): value is StoredMessage {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    typeof value.id === "number" &&
+    "role" in value &&
+    (value.role === "user" || value.role === "assistant") &&
+    "content" in value &&
+    typeof value.content === "string"
+  );
+}
+
+export async function createChatSession(
+  title: string,
+  personaName: PersonaName | null = null
+): Promise<ChatSession> {
+  const response = await fetch("/api/chat/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title,
+      persona_name: personaName,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Session creation failed with status ${response.status}`);
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!isChatSession(payload)) {
+    throw new Error("Backend returned an invalid chat session");
+  }
+
+  return payload;
+}
+
+export async function getSessionMessages(
+  sessionId: number
+): Promise<StoredMessage[]> {
+  const response = await fetch(`/api/chat/sessions/${sessionId}/messages`);
+
+  if (!response.ok) {
+    throw new Error(`Message history failed with status ${response.status}`);
+  }
+
+  const payload: unknown = await response.json();
+
+  if (!Array.isArray(payload) || !payload.every(isStoredMessage)) {
+    throw new Error("Backend returned invalid message history");
+  }
+
+  return payload;
 }

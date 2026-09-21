@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from mini_onyx.chat.personas import PERSONA_PRESETS
+
 
 class ChatRequest(BaseModel):
     message: str = Field(max_length=4_000)
@@ -37,7 +39,15 @@ class ChatStreamError(BaseModel):
 
 class CreateChatSessionRequest(BaseModel):
     title: str = Field(max_length=200)
-    persona_name: Literal["teacher", "concise"] | None = None
+    persona_name: str | None = None
+
+    @field_validator("persona_name")
+    @classmethod
+    def validate_persona_name(cls, value: str | None) -> str | None:
+        if value is not None and value not in PERSONA_PRESETS:
+            raise ValueError("Unknown persona")
+
+        return value
 
     @field_validator("title")
     @classmethod
@@ -60,3 +70,7 @@ class StoredMessageResponse(BaseModel):
     id: int
     role: str
     content: str
+
+
+class PersonaResponse(BaseModel):
+    name: str

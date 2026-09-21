@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from mini_onyx.chat.personas import PERSONA_PRESETS
 from mini_onyx.chat.service import (
     generate_reply,
     get_session_or_raise,
@@ -28,6 +29,7 @@ from mini_onyx.server.query_and_chat.models import (
     ChatStreamDone,
     ChatStreamError,
     CreateChatSessionRequest,
+    PersonaResponse,
     StoredMessageResponse,
 )
 
@@ -48,6 +50,11 @@ def send_chat_message(
         llm=llm,
     )
     return ChatResponse(reply=reply)
+
+
+@router.get("/personas")
+def list_personas() -> list[PersonaResponse]:
+    return [PersonaResponse(name=name) for name in PERSONA_PRESETS]
 
 
 @router.post("/stream")

@@ -269,3 +269,23 @@ def test_session_stream_returns_404_for_missing_session(client: TestClient) -> N
     )
 
     assert response.status_code == 404
+
+
+def test_lists_available_personas(client: TestClient) -> None:
+    response = client.get("/api/chat/personas")
+
+    assert response.status_code == 200
+    assert response.json() == [{"name": name} for name in PERSONA_PRESETS]
+
+
+def test_accepts_every_listed_persona(client: TestClient) -> None:
+    listed = client.get("/api/chat/personas").json()
+
+    for persona in listed:
+        created = client.post(
+            "/api/chat/sessions",
+            json={"title": "Test", "persona_name": persona["name"]},
+        )
+
+        assert created.status_code == 201
+        assert created.json()["persona_name"] == persona["name"]

@@ -14,5 +14,5 @@ def get_database_engine() -> Engine:
 
 
 def get_db_session() -> Iterator[Session]:
-    with Session(get_database_engine()) as db_session:
+    with Session(get_database_engine(), expire_on_commit=False) as db_session:
         yield db_session

@@ -1,7 +1,14 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mini_onyx.db.models import ChatSession, Document, Message, Persona, User
+from mini_onyx.db.models import (
+    ChatSession,
+    Document,
+    DocumentChunk,
+    Message,
+    Persona,
+    User,
+)
 
 
 def create_chat_session(
@@ -101,3 +108,44 @@ def create_document(
     db_session.add(document)
     db_session.flush()
     return document
+
+
+def get_document(
+    db_session: Session,
+    *,
+    document_id: int,
+) -> Document | None:
+    return db_session.get(Document, document_id)
+
+
+def create_document_chunks(
+    db_session: Session,
+    *,
+    document_id: int,
+    chunks: list[tuple[str, int]],
+) -> list[DocumentChunk]:
+    rows = [
+        DocumentChunk(
+            document_id=document_id,
+            chunk_index=index,
+            content=content,
+            token_count=token_count,
+        )
+        for index, (content, token_count) in enumerate(chunks)
+    ]
+    db_session.add_all(rows)
+    db_session.flush()
+    return rows
+
+
+def list_document_chunks(
+    db_session: Session,
+    *,
+    document_id: int,
+) -> list[DocumentChunk]:
+    statement = (
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document_id)
+        .order_by(DocumentChunk.chunk_index)
+    )
+    return list(db_session.scalars(statement))

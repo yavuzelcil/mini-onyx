@@ -3,9 +3,15 @@ from uuid import uuid4
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from mini_onyx.db.models import Document
-from mini_onyx.db.repository import create_document
+from mini_onyx.db.models import Document, DocumentChunk
+from mini_onyx.db.repository import (
+    create_document,
+    create_document_chunks,
+    get_document,
+)
+from mini_onyx.document_index.chunker import chunk_text
 from mini_onyx.document_index.exceptions import (
+    DocumentNotFoundError,
     DocumentTooLargeError,
     DocumentValidationError,
 )
@@ -56,3 +62,30 @@ def save_text_document(
         raise
 
     return db_session.get_one(Document, document_id)
+
+
+def get_document_or_raise(
+    db_session: Session,
+    *,
+    document_id: int,
+) -> Document:
+    document = get_document(db_session, document_id=document_id)
+    if document is None:
+        raise DocumentNotFoundError("Document not found.")
+    return document
+
+
+def chunk_and_store_document(
+    db_session: Session,
+    *,
+    document_id: int,
+    content: str,
+) -> list[DocumentChunk]:
+
+    chunks = chunk_text(content)
+    with db_session.begin():
+        return create_document_chunks(
+            db_session,
+            document_id=document_id,
+            chunks=chunks,
+        )

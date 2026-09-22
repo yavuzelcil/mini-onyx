@@ -9,6 +9,7 @@ from mini_onyx.db.models import Base
 def test_chat_models_register_expected_tables() -> None:
     assert set(Base.metadata.tables) == {
         "chat_sessions",
+        "document_chunks",
         "documents",
         "messages",
         "personas",

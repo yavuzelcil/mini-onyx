@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from mini_onyx.document_index.exceptions import (
+    DocumentNotFoundError,
     DocumentTooLargeError,
     DocumentValidationError,
 )
@@ -25,5 +26,15 @@ def register_document_exception_handlers(application: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": str(error)},
+        )
+
+    @application.exception_handler(DocumentNotFoundError)
+    async def handle_document_not_found(
+        _request: Request,
+        error: DocumentNotFoundError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
             content={"detail": str(error)},
         )

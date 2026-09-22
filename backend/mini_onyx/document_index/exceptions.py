@@ -8,3 +8,7 @@ class DocumentValidationError(ValueError):
 
 class DocumentTooLargeError(DocumentValidationError):
     """Raised when an uploaded document exceeds the size limit."""
+
+
+class DocumentNotFoundError(RuntimeError):
+    """Raised when a document does not exist."""

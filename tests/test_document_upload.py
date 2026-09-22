@@ -37,7 +37,7 @@ def upload_client() -> Iterator[tuple[TestClient, FakeFileStore, Engine]]:
     file_store = FakeFileStore()
 
     def get_test_db_session() -> Iterator[Session]:
-        with Session(engine) as db_session:
+        with Session(engine, expire_on_commit=False) as db_session:
             yield db_session
 
     def get_test_file_store() -> FakeFileStore:
@@ -77,6 +77,36 @@ def test_upload_saves_raw_file_and_extracted_text(
         assert document.id == response.json()["id"]
         assert document.content == "Merhaba Mini Onyx"
         assert document.object_key in file_store.objects
+
+
+def test_upload_creates_and_lists_chunks(
+    upload_client: tuple[TestClient, FakeFileStore, Engine],
+) -> None:
+    client, _, _ = upload_client
+    content = ("Birinci paragraf. " * 3 + "\n\n" + "Ikinci paragraf. " * 3).encode()
+
+    uploaded = client.post(
+        "/api/documents/upload",
+        files={"file": ("notes.txt", content, "text/plain")},
+    )
+    document_id = uploaded.json()["id"]
+
+    assert uploaded.json()["chunk_count"] >= 1
+
+    chunks = client.get(f"/api/documents/{document_id}/chunks")
+
+    assert chunks.status_code == 200
+    assert len(chunks.json()) == uploaded.json()["chunk_count"]
+    assert chunks.json()[0]["chunk_index"] == 0
+
+
+def test_chunks_for_missing_document_return_404(
+    upload_client: tuple[TestClient, FakeFileStore, Engine],
+) -> None:
+    client, _, _ = upload_client
+    response = client.get("/api/documents/999/chunks")
+
+    assert response.status_code == 404
 
 
 @pytest.mark.parametrize(

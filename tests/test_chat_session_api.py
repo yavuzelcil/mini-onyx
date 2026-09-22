@@ -74,7 +74,7 @@ def client() -> Iterator[TestClient]:
     Base.metadata.create_all(engine)
 
     def get_test_db_session() -> Iterator[Session]:
-        with Session(engine) as db_session:
+        with Session(engine, expire_on_commit=False) as db_session:
             yield db_session
 
     app.dependency_overrides[get_db_session] = get_test_db_session

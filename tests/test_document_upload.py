@@ -4,12 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.models import Base, Document
 from mini_onyx.document_index.dependencies import get_file_store
+from mini_onyx.document_index.service import save_text_document
 from mini_onyx.main import app
 
 
@@ -104,3 +106,20 @@ def test_upload_rejects_unsupported_files(
     assert file_store.objects == {}
     with Session(engine) as db_session:
         assert db_session.scalar(select(Document)) is None
+
+
+def test_save_text_document_deletes_object_when_database_write_fails() -> None:
+    engine = create_engine("sqlite+pysqlite://")
+    # Intentionally do not create any tables, so the insert fails.
+    file_store = FakeFileStore()
+
+    with Session(engine) as db_session:
+        with pytest.raises(SQLAlchemyError):
+            save_text_document(
+                db_session,
+                file_store,
+                filename="notes.txt",
+                content=b"Hello",
+            )
+
+    assert file_store.objects == {}

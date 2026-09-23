@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -149,3 +151,13 @@ def list_document_chunks(
         .order_by(DocumentChunk.chunk_index)
     )
     return list(db_session.scalars(statement))
+
+
+def update_chunk_embedding(
+    db_session: Session,
+    *,
+    chunk_id: int,
+    embedding: list[float],
+) -> None:
+    chunk = db_session.get_one(DocumentChunk, chunk_id)
+    chunk.embedding = json.dumps(embedding)

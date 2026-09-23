@@ -112,5 +112,6 @@ class DocumentChunk(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     document: Mapped["Document"] = relationship(back_populates="chunks")

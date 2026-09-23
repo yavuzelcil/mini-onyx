@@ -6,6 +6,9 @@ from mini_onyx.document_index.exceptions import StorageConfigurationError
 from mini_onyx.llm.exceptions import LLMConfigurationError
 
 DEFAULT_LLM_MODEL = "openai/gpt-5-mini"
+DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
+DEFAULT_OPENSEARCH_URL = "http://127.0.0.1:9200"
+DEFAULT_OPENSEARCH_INDEX = "mini-onyx-chunks"
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +27,17 @@ class StorageSettings:
     access_key: str
     secret_key: str
     bucket: str
+
+
+@dataclass(frozen=True, slots=True)
+class OpenSearchSettings:
+    url: str
+    index_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingSettings:
+    model: str
 
 
 def get_llm_settings() -> LLMSettings:
@@ -60,3 +74,22 @@ def get_storage_settings() -> StorageSettings:
         secret_key=values["secret_key"],
         bucket=values["bucket"],
     )
+
+
+def get_embedding_settings() -> EmbeddingSettings:
+    model = os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL).strip()
+
+    if not model:
+        raise LLMConfigurationError("EMBEDDING_MODEL cannot be empty.")
+
+    return EmbeddingSettings(model=model)
+
+
+def get_opensearch_settings() -> OpenSearchSettings:
+    url = os.getenv("OPENSEARCH_URL", DEFAULT_OPENSEARCH_URL).strip()
+    index_name = os.getenv("OPENSEARCH_INDEX", DEFAULT_OPENSEARCH_INDEX).strip()
+
+    if not url or not index_name:
+        raise StorageConfigurationError("OpenSearch settings cannot be empty.")
+
+    return OpenSearchSettings(url=url, index_name=index_name)

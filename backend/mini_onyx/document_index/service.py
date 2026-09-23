@@ -1,3 +1,4 @@
+import json
 from uuid import uuid4
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -8,13 +9,17 @@ from mini_onyx.db.repository import (
     create_document,
     create_document_chunks,
     get_document,
+    list_document_chunks,
+    update_chunk_embedding,
 )
 from mini_onyx.document_index.chunker import chunk_text
+from mini_onyx.document_index.embedder import Embedder
 from mini_onyx.document_index.exceptions import (
     DocumentNotFoundError,
     DocumentTooLargeError,
     DocumentValidationError,
 )
+from mini_onyx.document_index.search_index import SearchIndex
 from mini_onyx.document_index.storage import FileStore
 
 MAX_TEXT_FILE_BYTES = 1_000_000
@@ -89,3 +94,50 @@ def chunk_and_store_document(
             document_id=document_id,
             chunks=chunks,
         )
+
+
+def embed_document_chunks(
+    db_session: Session,
+    embedder: Embedder,
+    *,
+    document_id: int,
+) -> int:
+    """Embed the document's chunks and return the vector dimension (0 if no chunks)."""
+    with db_session.begin():
+        chunks = list_document_chunks(db_session, document_id=document_id)
+        contents = [chunk.content for chunk in chunks]
+        chunk_ids = [chunk.id for chunk in chunks]
+
+    vectors = embedder.embed(contents)
+
+    with db_session.begin():
+        for chunk_id, vector in zip(chunk_ids, vectors, strict=True):
+            update_chunk_embedding(db_session, chunk_id=chunk_id, embedding=vector)
+
+    return len(vectors[0]) if vectors else 0
+
+
+def index_document_chunks(
+    db_session: Session,
+    search_index: SearchIndex,
+    *,
+    document_id: int,
+) -> int:
+    with db_session.begin():
+        chunks = list_document_chunks(db_session, document_id=document_id)
+        rows = [
+            (chunk.id, chunk.content, json.loads(chunk.embedding))
+            for chunk in chunks
+            if chunk.embedding is not None
+        ]
+
+    search_index.ensure_index_exists()
+    for chunk_id, content, embedding in rows:
+        search_index.index_chunk(
+            chunk_id=chunk_id,
+            document_id=document_id,
+            content=content,
+            embedding=embedding,
+        )
+
+    return len(rows)

@@ -215,7 +215,7 @@ export default function HomePage() {
       <section className="mx-auto flex min-h-[80vh] max-w-3xl flex-col rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
         <header className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
-            <h1 className="text-2xl font-semibold">Mini Onyx</h1>
+            <h1 className="text-2xl font-semibold">mini-Onyx</h1>
             <p className="mt-1 text-sm text-slate-400">
               {sessionId === null ? "New chat" : `Chat #${sessionId}`}
             </p>

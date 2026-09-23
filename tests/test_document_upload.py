@@ -10,7 +10,11 @@ from sqlalchemy.pool import StaticPool
 
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.models import Base, Document
-from mini_onyx.document_index.dependencies import get_file_store
+from mini_onyx.document_index.dependencies import (
+    get_embedder,
+    get_file_store,
+    get_search_index,
+)
 from mini_onyx.document_index.service import save_text_document
 from mini_onyx.main import app
 
@@ -24,6 +28,36 @@ class FakeFileStore:
 
     def delete(self, *, key: str) -> None:
         self.objects.pop(key, None)
+
+
+class FakeEmbedder:
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[0.0, 0.0, 0.0] for _ in texts]
+
+
+class FakeSearchIndex:
+    def __init__(self) -> None:
+        self.indexed: list[dict] = []
+
+    def ensure_index_exists(self) -> None:
+        pass
+
+    def index_chunk(
+        self,
+        *,
+        chunk_id: int,
+        document_id: int,
+        content: str,
+        embedding: list[float],
+    ) -> None:
+        self.indexed.append(
+            {
+                "chunk_id": chunk_id,
+                "document_id": document_id,
+                "content": content,
+                "embedding": embedding,
+            }
+        )
 
 
 @pytest.fixture
@@ -43,8 +77,16 @@ def upload_client() -> Iterator[tuple[TestClient, FakeFileStore, Engine]]:
     def get_test_file_store() -> FakeFileStore:
         return file_store
 
+    def get_test_embedder() -> FakeEmbedder:
+        return FakeEmbedder()
+
+    def get_test_search_index() -> FakeSearchIndex:
+        return FakeSearchIndex()
+
+    app.dependency_overrides[get_search_index] = get_test_search_index
     app.dependency_overrides[get_db_session] = get_test_db_session
     app.dependency_overrides[get_file_store] = get_test_file_store
+    app.dependency_overrides[get_embedder] = get_test_embedder
 
     try:
         with TestClient(app) as client:
@@ -52,6 +94,8 @@ def upload_client() -> Iterator[tuple[TestClient, FakeFileStore, Engine]]:
     finally:
         app.dependency_overrides.pop(get_db_session, None)
         app.dependency_overrides.pop(get_file_store, None)
+        app.dependency_overrides.pop(get_embedder, None)
+        app.dependency_overrides.pop(get_search_index, None)
         engine.dispose()
 
 
@@ -92,12 +136,15 @@ def test_upload_creates_and_lists_chunks(
     document_id = uploaded.json()["id"]
 
     assert uploaded.json()["chunk_count"] >= 1
-
+    assert uploaded.json()["embedding_dimensions"] == 3
     chunks = client.get(f"/api/documents/{document_id}/chunks")
 
     assert chunks.status_code == 200
     assert len(chunks.json()) == uploaded.json()["chunk_count"]
     assert chunks.json()[0]["chunk_index"] == 0
+    assert chunks.json()[0]["has_embedding"]
+    assert all(chunk["has_embedding"] for chunk in chunks.json())
+    assert uploaded.json()["indexed_chunk_count"] == uploaded.json()["chunk_count"]
 
 
 def test_chunks_for_missing_document_return_404(

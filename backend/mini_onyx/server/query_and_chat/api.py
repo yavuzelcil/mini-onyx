@@ -18,6 +18,13 @@ from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.repository import (
     list_messages,
 )
+from mini_onyx.document_index.dependencies import get_embedder, get_search_index
+from mini_onyx.document_index.embedder import Embedder
+from mini_onyx.document_index.search_index import SearchIndex
+from mini_onyx.document_index.service import (
+    format_search_results_as_context,
+    search_document_chunks,
+)
 from mini_onyx.llm.dependencies import get_llm
 from mini_onyx.llm.exceptions import LLMError
 from mini_onyx.llm.interfaces import LLM
@@ -25,11 +32,14 @@ from mini_onyx.server.query_and_chat.models import (
     ChatRequest,
     ChatResponse,
     ChatSessionResponse,
+    ChatSourceResponse,
     ChatStreamDelta,
     ChatStreamDone,
     ChatStreamError,
+    ChatStreamSources,
     CreateChatSessionRequest,
     PersonaResponse,
+    SessionChatRequest,
     StoredMessageResponse,
 )
 
@@ -37,6 +47,36 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 
 LLMDependency = Annotated[LLM, Depends(get_llm)]
 DBSessionDependency = Annotated[Session, Depends(get_db_session)]
+EmbedderDependency = Annotated[Embedder, Depends(get_embedder)]
+SearchIndexDependency = Annotated[SearchIndex, Depends(get_search_index)]
+
+
+def _retrieve_document_context(
+    request: SessionChatRequest,
+    embedder: Embedder,
+    search_index: SearchIndex,
+) -> tuple[str | None, list[ChatSourceResponse]]:
+    if not request.use_rag:
+        return None, []
+
+    results = search_document_chunks(
+        embedder,
+        search_index,
+        query=request.message,
+        limit=3,
+    )
+
+    sources = [
+        ChatSourceResponse(
+            chunk_id=result.chunk_id,
+            document_id=result.document_id,
+            content=result.content,
+            score=result.score,
+        )
+        for result in results
+    ]
+
+    return format_search_results_as_context(results), sources
 
 
 @router.post("")
@@ -125,15 +165,24 @@ def get_chat_session_route(
 @router.post("/sessions/{chat_session_id}/messages")
 def send_session_message(
     chat_session_id: int,
-    chat_request: ChatRequest,
+    chat_request: SessionChatRequest,
     db_session: DBSessionDependency,
     llm: LLMDependency,
+    embedder: EmbedderDependency,
+    search_index: SearchIndexDependency,
 ) -> ChatResponse:
+    document_context, _ = _retrieve_document_context(
+        chat_request,
+        embedder,
+        search_index,
+    )
+
     reply = reply_in_chat_session(
         db_session,
         chat_session_id=chat_session_id,
         message=chat_request.message,
         llm=llm,
+        document_context=document_context,
     )
     return ChatResponse(reply=reply)
 
@@ -141,30 +190,47 @@ def send_session_message(
 @router.post("/sessions/{chat_session_id}/messages/stream")
 def stream_session_message(
     chat_session_id: int,
-    chat_request: ChatRequest,
+    chat_request: SessionChatRequest,
     db_session: DBSessionDependency,
     llm: LLMDependency,
+    embedder: EmbedderDependency,
+    search_index: SearchIndexDependency,
 ) -> StreamingResponse:
     with db_session.begin():
         get_session_or_raise(db_session, chat_session_id=chat_session_id)
 
     def generate_ndjson() -> Iterator[str]:
         try:
+            document_context, sources = _retrieve_document_context(
+                chat_request,
+                embedder,
+                search_index,
+            )
+
+            if chat_request.use_rag:
+                source_packet = ChatStreamSources(sources=sources)
+                yield f"{source_packet.model_dump_json()}\n"
+
             for content in stream_reply_in_chat_session(
                 db_session,
                 chat_session_id=chat_session_id,
                 message=chat_request.message,
                 llm=llm,
+                document_context=document_context,
             ):
                 packet = ChatStreamDelta(content=content)
                 yield f"{packet.model_dump_json()}\n"
 
             yield f"{ChatStreamDone().model_dump_json()}\n"
+
         except LLMError as error:
             packet = ChatStreamError(detail=str(error))
             yield f"{packet.model_dump_json()}\n"
 
-    return StreamingResponse(generate_ndjson(), media_type="application/x-ndjson")
+    return StreamingResponse(
+        generate_ndjson(),
+        media_type="application/x-ndjson",
+    )
 
 
 @router.get("/sessions/{chat_session_id}/messages")

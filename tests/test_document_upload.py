@@ -15,6 +15,7 @@ from mini_onyx.document_index.dependencies import (
     get_file_store,
     get_search_index,
 )
+from mini_onyx.document_index.search_index import SearchResult
 from mini_onyx.document_index.service import save_text_document
 from mini_onyx.main import app
 
@@ -58,6 +59,21 @@ class FakeSearchIndex:
                 "embedding": embedding,
             }
         )
+
+    def vector_search(
+        self,
+        *,
+        embedding: list[float],
+        limit: int = 5,
+    ) -> list[SearchResult]:
+        return [
+            SearchResult(
+                chunk_id=7,
+                document_id=3,
+                content="Mini Onyx belge parçası",
+                score=0.91,
+            )
+        ]
 
 
 @pytest.fixture
@@ -200,3 +216,24 @@ def test_save_text_document_deletes_object_when_database_write_fails() -> None:
             )
 
     assert file_store.objects == {}
+
+
+def test_search_documents_returns_semantic_matches(
+    upload_client: tuple[TestClient, FakeFileStore, Engine],
+) -> None:
+    client, _, _ = upload_client
+
+    response = client.get(
+        "/api/documents/search",
+        params={"query": "Mini Onyx nedir?", "limit": 4},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "chunk_id": 7,
+            "document_id": 3,
+            "content": "Mini Onyx belge parçası",
+            "score": 0.91,
+        }
+    ]

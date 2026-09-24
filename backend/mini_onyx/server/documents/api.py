@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from mini_onyx.db.dependencies import get_db_session
@@ -19,10 +19,12 @@ from mini_onyx.document_index.service import (
     get_document_or_raise,
     index_document_chunks,
     save_text_document,
+    search_document_chunks,
 )
 from mini_onyx.document_index.storage import FileStore
 from mini_onyx.server.documents.models import (
     DocumentChunkResponse,
+    DocumentSearchResultResponse,
     UploadedDocumentResponse,
 )
 
@@ -74,6 +76,31 @@ def upload_document(
         embedding_dimensions=embedding_dimensions,
         indexed_chunk_count=indexed_chunk_count,
     )
+
+
+@router.get("/search")
+def search_documents(
+    query: Annotated[str, Query(min_length=1, max_length=2_000)],
+    embedder: EmbedderDependency,
+    search_index: SearchIndexDependency,
+    limit: Annotated[int, Query(ge=1, le=20)] = 5,
+) -> list[DocumentSearchResultResponse]:
+    results = search_document_chunks(
+        embedder,
+        search_index,
+        query=query,
+        limit=limit,
+    )
+
+    return [
+        DocumentSearchResultResponse(
+            chunk_id=result.chunk_id,
+            document_id=result.document_id,
+            content=result.content,
+            score=result.score,
+        )
+        for result in results
+    ]
 
 
 @router.get("/{document_id}/chunks")

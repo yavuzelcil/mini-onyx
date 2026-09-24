@@ -1,8 +1,17 @@
+from dataclasses import dataclass
 from typing import Protocol
 
 from opensearchpy import OpenSearch
 
 EMBEDDING_DIMENSIONS = 1536
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResult:
+    chunk_id: int
+    document_id: int
+    content: str
+    score: float
 
 
 class SearchIndex(Protocol):
@@ -19,6 +28,15 @@ class SearchIndex(Protocol):
         embedding: list[float],
     ) -> None:
         """Add or replace one chunk in the index."""
+        ...
+
+    def vector_search(
+        self,
+        *,
+        embedding: list[float],
+        limit: int = 5,
+    ) -> list[SearchResult]:
+        """Find chunks whose embeddings are closest to the query embedding."""
         ...
 
 
@@ -71,3 +89,36 @@ class OpenSearchIndex:
             },
             refresh=True,
         )
+
+    def vector_search(
+        self,
+        *,
+        embedding: list[float],
+        limit: int = 5,
+    ) -> list[SearchResult]:
+        response = self._client.search(
+            index=self._index_name,
+            body={
+                "size": limit,
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": embedding,
+                            "k": limit,
+                        }
+                    }
+                },
+            },
+        )
+
+        hits = response["hits"]["hits"]
+
+        return [
+            SearchResult(
+                chunk_id=int(hit["_id"]),
+                document_id=int(hit["_source"]["document_id"]),
+                content=str(hit["_source"]["content"]),
+                score=float(hit["_score"]),
+            )
+            for hit in hits
+        ]

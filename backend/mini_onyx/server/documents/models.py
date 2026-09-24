@@ -16,3 +16,10 @@ class DocumentChunkResponse(BaseModel):
     content: str
     token_count: int
     has_embedding: bool
+
+
+class DocumentSearchResultResponse(BaseModel):
+    chunk_id: int
+    document_id: int
+    content: str
+    score: float

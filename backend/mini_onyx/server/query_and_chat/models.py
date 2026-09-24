@@ -19,8 +19,24 @@ class ChatRequest(BaseModel):
         return stripped_value
 
 
+class SessionChatRequest(ChatRequest):
+    use_rag: bool = False
+
+
 class ChatResponse(BaseModel):
     reply: str
+
+
+class ChatSourceResponse(BaseModel):
+    chunk_id: int
+    document_id: int
+    content: str
+    score: float
+
+
+class ChatStreamSources(BaseModel):
+    type: Literal["sources"] = "sources"
+    sources: list[ChatSourceResponse]
 
 
 class ChatStreamDelta(BaseModel):

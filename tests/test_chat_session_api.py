@@ -10,10 +10,34 @@ from sqlalchemy.pool import StaticPool
 from mini_onyx.chat.personas import PERSONA_PRESETS
 from mini_onyx.db.dependencies import get_db_session
 from mini_onyx.db.models import Base
+from mini_onyx.document_index.dependencies import get_embedder, get_search_index
+from mini_onyx.document_index.search_index import SearchResult
 from mini_onyx.llm.dependencies import get_llm
 from mini_onyx.llm.exceptions import LLMConnectionError
 from mini_onyx.llm.interfaces import LLM
 from mini_onyx.main import app
+
+
+class FakeEmbedder:
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[0.1, 0.2] for _ in texts]
+
+
+class FakeSearchIndex:
+    def vector_search(
+        self,
+        *,
+        embedding: list[float],
+        limit: int = 5,
+    ) -> list[SearchResult]:
+        return [
+            SearchResult(
+                chunk_id=7,
+                document_id=3,
+                content="Mini Onyx projesinin gizli test rengi zümrüttür.",
+                score=0.91,
+            )
+        ]
 
 
 class FakeLLM:
@@ -79,12 +103,15 @@ def client() -> Iterator[TestClient]:
 
     app.dependency_overrides[get_db_session] = get_test_db_session
     app.dependency_overrides[get_llm] = get_fake_llm
-
+    app.dependency_overrides[get_embedder] = lambda: FakeEmbedder()
+    app.dependency_overrides[get_search_index] = lambda: FakeSearchIndex()
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
         app.dependency_overrides.pop(get_db_session, None)
+        app.dependency_overrides.pop(get_embedder, None)
+        app.dependency_overrides.pop(get_search_index, None)
         app.dependency_overrides.pop(get_llm, None)
         engine.dispose()
 
@@ -289,3 +316,60 @@ def test_accepts_every_listed_persona(client: TestClient) -> None:
 
         assert created.status_code == 201
         assert created.json()["persona_name"] == persona["name"]
+
+
+def test_session_stream_uses_rag_context_and_returns_sources(
+    client: TestClient,
+) -> None:
+    recorded_prompts: list[str] = []
+
+    class RecordingRAGLLM(FakeLLM):
+        def stream(
+            self,
+            *,
+            system_prompt: str,
+            user_message: str,
+            history: list[tuple[str, str]] | None = None,
+        ) -> Iterator[str]:
+            recorded_prompts.append(system_prompt)
+            yield "Test rengi zümrüttür. [Document 3, chunk 7]"
+
+    app.dependency_overrides[get_llm] = lambda: RecordingRAGLLM()
+
+    created = client.post(
+        "/api/chat/sessions",
+        json={"title": "RAG testi"},
+    )
+    chat_session_id = created.json()["id"]
+
+    response = client.post(
+        f"/api/chat/sessions/{chat_session_id}/messages/stream",
+        json={
+            "message": "Projenin test rengi nedir?",
+            "use_rag": True,
+        },
+    )
+
+    packets = [json.loads(line) for line in response.text.splitlines()]
+
+    assert response.status_code == 200
+    assert packets == [
+        {
+            "type": "sources",
+            "sources": [
+                {
+                    "chunk_id": 7,
+                    "document_id": 3,
+                    "content": ("Mini Onyx projesinin gizli test rengi zümrüttür."),
+                    "score": 0.91,
+                }
+            ],
+        },
+        {
+            "type": "content_delta",
+            "content": "Test rengi zümrüttür. [Document 3, chunk 7]",
+        },
+        {"type": "done"},
+    ]
+    assert "[Document 3, chunk 7]" in recorded_prompts[0]
+    assert "gizli test rengi zümrüttür" in recorded_prompts[0]

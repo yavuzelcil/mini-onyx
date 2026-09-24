@@ -19,7 +19,7 @@ from mini_onyx.document_index.exceptions import (
     DocumentTooLargeError,
     DocumentValidationError,
 )
-from mini_onyx.document_index.search_index import SearchIndex
+from mini_onyx.document_index.search_index import SearchIndex, SearchResult
 from mini_onyx.document_index.storage import FileStore
 
 MAX_TEXT_FILE_BYTES = 1_000_000
@@ -141,3 +141,28 @@ def index_document_chunks(
         )
 
     return len(rows)
+
+
+def search_document_chunks(
+    embedder: Embedder,
+    search_index: SearchIndex,
+    *,
+    query: str,
+    limit: int = 5,
+) -> list[SearchResult]:
+    query_embedding = embedder.embed([query])[0]
+
+    return search_index.vector_search(
+        embedding=query_embedding,
+        limit=limit,
+    )
+
+
+def format_search_results_as_context(results: list[SearchResult]) -> str:
+    if not results:
+        return "No relevant document context was found."
+
+    return "\n\n".join(
+        (f"[Document {result.document_id}, chunk {result.chunk_id}]\n{result.content}")
+        for result in results
+    )

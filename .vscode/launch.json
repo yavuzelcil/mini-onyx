@@ -52,6 +52,31 @@
       "envFile": "${workspaceFolder}/.env",
       "console": "internalConsole",
       "justMyCode": true
+    },
+    {
+      "name": "Frontend: Next.js",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/web/node_modules/next/dist/bin/next",
+      "args": [
+        "dev"
+      ],
+      "cwd": "${workspaceFolder}/web",
+      "console": "internalConsole",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Backend + Frontend",
+      "configurations": [
+        "Backend: FastAPI",
+        "Frontend: Next.js"
+      ],
+      "stopAll": true
     }
   ]
 }

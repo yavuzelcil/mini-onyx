@@ -23,6 +23,7 @@ from mini_onyx.document_index.search_index import SearchIndex, SearchResult
 from mini_onyx.document_index.storage import FileStore
 
 MAX_TEXT_FILE_BYTES = 1_000_000
+RRF_K = 50
 
 
 def extract_text(filename: str | None, content: bytes) -> tuple[str, str]:
@@ -143,6 +144,44 @@ def index_document_chunks(
     return len(rows)
 
 
+def reciprocal_rank_fusion(
+    ranked_results: list[list[SearchResult]],
+    *,
+    limit: int,
+    k: int = RRF_K,
+) -> list[SearchResult]:
+    scores: dict[int, float] = {}
+    results_by_chunk: dict[int, SearchResult] = {}
+    first_positions: dict[int, tuple[int, int]] = {}
+
+    for source_index, results in enumerate(ranked_results):
+        for rank, result in enumerate(results, start=1):
+            chunk_id = result.chunk_id
+            scores[chunk_id] = scores.get(chunk_id, 0.0) + 1 / (k + rank)
+
+            if chunk_id not in results_by_chunk:
+                results_by_chunk[chunk_id] = result
+                first_positions[chunk_id] = (rank, source_index)
+
+    sorted_chunk_ids = sorted(
+        scores,
+        key=lambda chunk_id: (
+            -scores[chunk_id],
+            first_positions[chunk_id],
+        ),
+    )
+
+    return [
+        SearchResult(
+            chunk_id=results_by_chunk[chunk_id].chunk_id,
+            document_id=results_by_chunk[chunk_id].document_id,
+            content=results_by_chunk[chunk_id].content,
+            score=scores[chunk_id],
+        )
+        for chunk_id in sorted_chunk_ids[:limit]
+    ]
+
+
 def search_document_chunks(
     embedder: Embedder,
     search_index: SearchIndex,
@@ -150,10 +189,20 @@ def search_document_chunks(
     query: str,
     limit: int = 5,
 ) -> list[SearchResult]:
+    candidate_limit = limit * 2
     query_embedding = embedder.embed([query])[0]
 
-    return search_index.vector_search(
+    vector_results = search_index.vector_search(
         embedding=query_embedding,
+        limit=candidate_limit,
+    )
+    keyword_results = search_index.keyword_search(
+        query=query,
+        limit=candidate_limit,
+    )
+
+    return reciprocal_rank_fusion(
+        [vector_results, keyword_results],
         limit=limit,
     )
 

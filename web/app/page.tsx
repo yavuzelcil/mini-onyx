@@ -317,7 +317,7 @@ export default function HomePage() {
             Document {source.document_id}, chunk {source.chunk_id}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            Similarity: {source.score.toFixed(3)}
+            Relevance: {source.score.toFixed(3)}
           </p>
           <p className="mt-2 whitespace-pre-wrap text-slate-400">
             {source.content}

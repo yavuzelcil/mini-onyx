@@ -75,6 +75,17 @@ class FakeSearchIndex:
             )
         ]
 
+    def keyword_search(
+        self,
+        *,
+        query: str,
+        limit: int = 5,
+    ) -> list[SearchResult]:
+        return self.vector_search(
+            embedding=[],
+            limit=limit,
+        )
+
 
 @pytest.fixture
 def upload_client() -> Iterator[tuple[TestClient, FakeFileStore, Engine]]:
@@ -218,7 +229,7 @@ def test_save_text_document_deletes_object_when_database_write_fails() -> None:
     assert file_store.objects == {}
 
 
-def test_search_documents_returns_semantic_matches(
+def test_search_documents_returns_hybrid_matches(
     upload_client: tuple[TestClient, FakeFileStore, Engine],
 ) -> None:
     client, _, _ = upload_client
@@ -234,6 +245,6 @@ def test_search_documents_returns_semantic_matches(
             "chunk_id": 7,
             "document_id": 3,
             "content": "Mini Onyx belge parçası",
-            "score": 0.91,
+            "score": 2 / 51,
         }
     ]

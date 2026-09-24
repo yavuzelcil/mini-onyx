@@ -91,3 +91,49 @@ def test_vector_search_sends_knn_query_and_parses_hits() -> None:
             score=0.91,
         )
     ]
+
+
+def test_keyword_search_sends_match_query_and_parses_hits() -> None:
+    client = Mock()
+    client.search.return_value = {
+        "hits": {
+            "hits": [
+                {
+                    "_id": "8",
+                    "_score": 2.4,
+                    "_source": {
+                        "document_id": 4,
+                        "content": "OpenSearch keyword araması",
+                    },
+                }
+            ]
+        }
+    }
+    index = OpenSearchIndex(client=client, index_name="test-index")
+
+    results = index.keyword_search(
+        query="OpenSearch",
+        limit=3,
+    )
+
+    client.search.assert_called_once_with(
+        index="test-index",
+        body={
+            "size": 3,
+            "query": {
+                "match": {
+                    "content": {
+                        "query": "OpenSearch",
+                    }
+                }
+            },
+        },
+    )
+    assert results == [
+        SearchResult(
+            chunk_id=8,
+            document_id=4,
+            content="OpenSearch keyword araması",
+            score=2.4,
+        )
+    ]

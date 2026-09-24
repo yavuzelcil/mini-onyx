@@ -39,6 +39,15 @@ class SearchIndex(Protocol):
         """Find chunks whose embeddings are closest to the query embedding."""
         ...
 
+    def keyword_search(
+        self,
+        *,
+        query: str,
+        limit: int = 5,
+    ) -> list[SearchResult]:
+        """Find chunks whose text matches the query."""
+        ...
+
 
 class OpenSearchIndex:
     def __init__(self, *, client: OpenSearch, index_name: str) -> None:
@@ -105,6 +114,38 @@ class OpenSearchIndex:
                         "embedding": {
                             "vector": embedding,
                             "k": limit,
+                        }
+                    }
+                },
+            },
+        )
+
+        hits = response["hits"]["hits"]
+
+        return [
+            SearchResult(
+                chunk_id=int(hit["_id"]),
+                document_id=int(hit["_source"]["document_id"]),
+                content=str(hit["_source"]["content"]),
+                score=float(hit["_score"]),
+            )
+            for hit in hits
+        ]
+
+    def keyword_search(
+        self,
+        *,
+        query: str,
+        limit: int = 5,
+    ) -> list[SearchResult]:
+        response = self._client.search(
+            index=self._index_name,
+            body={
+                "size": limit,
+                "query": {
+                    "match": {
+                        "content": {
+                            "query": query,
                         }
                     }
                 },

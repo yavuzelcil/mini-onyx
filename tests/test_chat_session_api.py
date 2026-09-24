@@ -39,6 +39,17 @@ class FakeSearchIndex:
             )
         ]
 
+    def keyword_search(
+        self,
+        *,
+        query: str,
+        limit: int = 5,
+    ) -> list[SearchResult]:
+        return self.vector_search(
+            embedding=[],
+            limit=limit,
+        )
+
 
 class FakeLLM:
     def invoke(
@@ -361,7 +372,7 @@ def test_session_stream_uses_rag_context_and_returns_sources(
                     "chunk_id": 7,
                     "document_id": 3,
                     "content": ("Mini Onyx projesinin gizli test rengi zümrüttür."),
-                    "score": 0.91,
+                    "score": 2 / 51,
                 }
             ],
         },

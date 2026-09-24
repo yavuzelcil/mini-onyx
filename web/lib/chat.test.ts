@@ -197,13 +197,31 @@ describe("streamChatMessage", () => {
 });
 
 describe("streamSessionMessage", () => {
-  test("streams a reply through the saved session endpoint", async () => {
+  test("streams RAG sources and a reply through the saved session endpoint", async () => {
     const controller = new AbortController();
     const body = new ReadableStream<Uint8Array>({
       start(streamController) {
         streamController.enqueue(
           new TextEncoder().encode(
-            '{"type":"content_delta","content":"Hello"}\n{"type":"done"}\n'
+            [
+              JSON.stringify({
+                type: "sources",
+                sources: [
+                  {
+                    chunk_id: 7,
+                    document_id: 3,
+                    content: "Test rengi zümrüttür.",
+                    score: 0.91,
+                  },
+                ],
+              }),
+              JSON.stringify({
+                type: "content_delta",
+                content: "Test rengi zümrüttür.",
+              }),
+              JSON.stringify({ type: "done" }),
+              "",
+            ].join("\n")
           )
         );
         streamController.close();
@@ -216,8 +234,11 @@ describe("streamSessionMessage", () => {
     const packets = [];
     for await (const packet of streamSessionMessage(
       7,
-      "Hi",
-      controller.signal
+      "Test rengi nedir?",
+      {
+        useRag: true,
+        signal: controller.signal,
+      }
     )) {
       packets.push(packet);
     }
@@ -227,12 +248,29 @@ describe("streamSessionMessage", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: "Hi" }),
+        body: JSON.stringify({
+          message: "Test rengi nedir?",
+          use_rag: true,
+        }),
         signal: controller.signal,
       }
     );
     expect(packets).toEqual([
-      { type: "content_delta", content: "Hello" },
+      {
+        type: "sources",
+        sources: [
+          {
+            chunk_id: 7,
+            document_id: 3,
+            content: "Test rengi zümrüttür.",
+            score: 0.91,
+          },
+        ],
+      },
+      {
+        type: "content_delta",
+        content: "Test rengi zümrüttür.",
+      },
       { type: "done" },
     ]);
   });

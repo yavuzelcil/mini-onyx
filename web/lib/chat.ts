@@ -19,6 +19,7 @@ const CHAT_STREAM_ENDPOINT = "/api/chat/stream";
 
 export interface ChatRequest {
   message: string;
+  use_rag?: boolean;
 }
 
 export interface ChatResponse {
@@ -39,10 +40,28 @@ export interface ChatStreamError {
   detail: string;
 }
 
+export interface ChatSource {
+  chunk_id: number;
+  document_id: number;
+  content: string;
+  score: number;
+}
+
+export interface ChatStreamSources {
+  type: "sources";
+  sources: ChatSource[];
+}
+
+export interface ChatStreamOptions {
+  useRag?: boolean;
+  signal?: AbortSignal;
+}
+
 export type ChatStreamPacket =
   | ChatStreamDelta
   | ChatStreamDone
-  | ChatStreamError;
+  | ChatStreamError
+  | ChatStreamSources;
 
 function isChatResponse(value: unknown): value is ChatResponse {
   return (
@@ -50,6 +69,21 @@ function isChatResponse(value: unknown): value is ChatResponse {
     value !== null &&
     "reply" in value &&
     typeof value.reply === "string"
+  );
+}
+
+function isChatSource(value: unknown): value is ChatSource {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "chunk_id" in value &&
+    typeof value.chunk_id === "number" &&
+    "document_id" in value &&
+    typeof value.document_id === "number" &&
+    "content" in value &&
+    typeof value.content === "string" &&
+    "score" in value &&
+    typeof value.score === "number"
   );
 }
 
@@ -62,6 +96,14 @@ function isChatStreamPacket(
     !("type" in value)
   ) {
     return false;
+  }
+
+  if (value.type === "sources") {
+    return (
+      "sources" in value &&
+      Array.isArray(value.sources) &&
+      value.sources.every(isChatSource)
+    );
   }
 
   if (value.type === "content_delta") {
@@ -126,10 +168,11 @@ export async function sendChatMessage(
 async function* streamChatAtEndpoint(
   endpoint: string,
   message: string,
-  signal?: AbortSignal
+  options: ChatStreamOptions = {}
 ): AsyncGenerator<ChatStreamPacket, void, unknown> {
   const request: ChatRequest = {
     message,
+    ...(options.useRag ? { use_rag: true } : {}),
   };
 
   const response = await fetch(endpoint, {
@@ -138,7 +181,7 @@ async function* streamChatAtEndpoint(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(request),
-    signal,
+    signal: options.signal,
   });
 
   if (!response.ok) {
@@ -189,22 +232,25 @@ async function* streamChatAtEndpoint(
   }
 }
 
+
 export async function* streamChatMessage(
   message: string,
   signal?: AbortSignal
 ): AsyncGenerator<ChatStreamPacket, void, unknown> {
-  yield* streamChatAtEndpoint(CHAT_STREAM_ENDPOINT, message, signal);
+  yield* streamChatAtEndpoint(CHAT_STREAM_ENDPOINT, message, {
+    signal,
+  });
 }
 
 export async function* streamSessionMessage(
   sessionId: number,
   message: string,
-  signal?: AbortSignal
+  options: ChatStreamOptions = {}
 ): AsyncGenerator<ChatStreamPacket, void, unknown> {
   yield* streamChatAtEndpoint(
     `/api/chat/sessions/${sessionId}/messages/stream`,
     message,
-    signal
+    options
   );
 }
 

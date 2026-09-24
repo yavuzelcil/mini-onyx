@@ -8,15 +8,19 @@ import {
   getChatSession,
   getSessionMessages,
   streamSessionMessage,
+  type ChatSource,
 } from "@/lib/chat";
 import PersonaSelect from "@/app/PersonaSelect";
+import DocumentUpload from "@/app/DocumentUpload";
 
 const SESSION_STORAGE_KEY = "mini-onyx-session-id";
+
 
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  sources: ChatSource[];
 }
 
 export default function HomePage() {
@@ -28,6 +32,7 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [useRag, setUseRag] = useState(false);
 
   useEffect(() => {
     const savedId = window.localStorage.getItem(SESSION_STORAGE_KEY);
@@ -59,6 +64,7 @@ export default function HomePage() {
             id: String(stored.id),
             role: stored.role,
             content: stored.content,
+            sources: [],
           }))
         );
       } catch (restoreError: unknown) {
@@ -124,16 +130,34 @@ export default function HomePage() {
 
       setMessages((currentMessages) => [
         ...currentMessages,
-        { id: userMessageId, role: "user", content: normalizedMessage },
-        { id: assistantMessageId, role: "assistant", content: "" },
+        { id: userMessageId, role: "user", content: normalizedMessage, sources: [] },
+        { id: assistantMessageId, role: "assistant", content: "", sources: [] },
       ]);
       messagesAdded = true;
 
       for await (const packet of streamSessionMessage(
         activeSessionId,
         normalizedMessage,
-        abortController.signal
+        {
+           useRag,
+          signal: abortController.signal,
+        }
       )) {
+
+
+        if (packet.type === "sources") {
+  setMessages((currentMessages) =>
+    currentMessages.map((chatMessage) =>
+      chatMessage.id === assistantMessageId
+        ? {
+            ...chatMessage,
+            sources: packet.sources,
+          }
+        : chatMessage
+    )
+  );
+}
+
         if (packet.type === "content_delta") {
           setMessages((currentMessages) =>
             currentMessages.map((chatMessage) =>
@@ -229,12 +253,28 @@ export default function HomePage() {
             New chat
           </button>
         </header>
-
+        <DocumentUpload
+          onUploaded={() => {
+              setUseRag(true);
+           }}
+        />
         <PersonaSelect
           value={selectedPersona}
           onChange={setSelectedPersona}
           disabled={sessionId !== null || isSubmitting || isLoadingHistory}
         />
+
+        <label className="mt-4 flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3">
+  <input
+    type="checkbox"
+    checked={useRag}
+    onChange={(event) => setUseRag(event.target.checked)}
+    disabled={isSubmitting || isLoadingHistory}
+  />
+  <span className="text-sm text-slate-300">
+    Use uploaded documents (RAG)
+  </span>
+</label>
 
         <div
           className="flex flex-1 flex-col gap-4 py-6"
@@ -261,6 +301,32 @@ export default function HomePage() {
                 </p>
                 <p className="mt-1 whitespace-pre-wrap">
                   {chatMessage.content}
+                  {chatMessage.sources.length > 0 ? (
+  <details className="mt-3 border-t border-slate-700 pt-3 text-sm">
+    <summary className="cursor-pointer text-slate-300">
+      Sources ({chatMessage.sources.length})
+    </summary>
+
+    <ul className="mt-2 space-y-2">
+      {chatMessage.sources.map((source) => (
+        <li
+          key={`${source.document_id}-${source.chunk_id}`}
+          className="rounded-lg bg-slate-950 p-3"
+        >
+          <p className="font-medium text-slate-300">
+            Document {source.document_id}, chunk {source.chunk_id}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Similarity: {source.score.toFixed(3)}
+          </p>
+          <p className="mt-2 whitespace-pre-wrap text-slate-400">
+            {source.content}
+          </p>
+        </li>
+      ))}
+    </ul>
+  </details>
+) : null}
                 </p>
               </article>
             ))
